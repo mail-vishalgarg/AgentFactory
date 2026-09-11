@@ -39,3 +39,4 @@ class MCPServerCreate(BaseModel):
     endpoint: str
     auth_type: str
     is_shared: bool = True
+    token: str | None = None

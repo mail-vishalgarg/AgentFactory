@@ -1,9 +1,48 @@
+import logging
 import uuid
 
+import httpx2
+from mcp import ClientSession
+from mcp.client.streamable_http import streamable_http_client
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.mcp import MCPServer, MCPTool
 from app.repositories import mcp as mcp_repo
+
+logger = logging.getLogger(__name__)
+
+_DESTRUCTIVE = {"delete", "remove", "destroy", "revoke", "dismiss", "close", "cancel"}
+_WRITE = {"create", "post", "push", "write", "update", "edit", "merge", "add",
+          "submit", "approve", "request", "assign", "label", "comment", "reply"}
+
+
+def _classify_permission(name: str) -> str:
+    tokens = set(name.lower().replace("_", " ").split())
+    if tokens & _DESTRUCTIVE:
+        return "destructive"
+    if tokens & _WRITE:
+        return "write"
+    return "read"
+
+
+async def discover_tools_from_mcp(endpoint: str, token: str) -> list[dict]:
+    """Connect to an MCP server and return its tools as a list of dicts."""
+    http_client = httpx2.AsyncClient(
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    async with streamable_http_client(endpoint, http_client=http_client) as (read, write, _):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools_response = await session.list_tools()
+            return [
+                {
+                    "name": t.name,
+                    "description": t.description or "",
+                    "input_schema": t.inputSchema if isinstance(t.inputSchema, dict) else {},
+                    "permission_level": _classify_permission(t.name),
+                }
+                for t in tools_response.tools
+            ]
 
 _SEED_SERVERS = [
     {

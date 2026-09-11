@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import AsyncSessionLocal
-from app.routers import agents, mcp_registry
+from app.routers import agent_runs, agents, connections, invoke, mcp_registry
 from app.services.mcp_registry import seed_mcp_data
 
 
@@ -38,6 +38,9 @@ app.add_middleware(
 
 app.include_router(mcp_registry.router, prefix="/mcp", tags=["MCP Registry"])
 app.include_router(agents.router, prefix="/agents", tags=["Agents"])
+app.include_router(agent_runs.router, prefix="/agents", tags=["Runs"])
+app.include_router(connections.router, prefix="/connections", tags=["Connections"])
+app.include_router(invoke.router, tags=["Invoke"])
 
 
 @app.get("/health")

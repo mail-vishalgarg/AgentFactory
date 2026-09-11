@@ -60,6 +60,7 @@ class AgentResponse(BaseModel):
     status: str
     config: AgentConfigSchema
     created_at: datetime
+    api_token: str = ""
 
 
 class AgentRunRequest(BaseModel):

@@ -27,11 +27,9 @@ const CRED_LABELS: Record<string, { label: string; placeholder: string; hint: st
   },
 }
 
-function deriveNameDesc(prompt: string): { name: string; description: string } {
-  const sentences = prompt.split(/[.!?]/).map((s) => s.trim()).filter(Boolean)
-  const name = sentences[0]?.slice(0, 60) ?? 'My Agent'
-  const description = sentences.slice(1).join('. ') || prompt
-  return { name, description }
+function deriveAgentName(servers: MCPServer[]): string {
+  if (servers.length === 0) return 'my_agent'
+  return servers.map((s) => s.name.toLowerCase().replace(/[^a-z0-9]/g, '_')).join('_') + '_agent'
 }
 
 export default function AgentBuilder() {
@@ -44,6 +42,7 @@ export default function AgentBuilder() {
   const [preConnected, setPreConnected] = useState<Set<string>>(new Set())
   const [verifyStatus, setVerifyStatus] = useState<Record<string, 'idle' | 'checking' | 'ok' | 'error'>>({})
   const [verifyMsg, setVerifyMsg] = useState<Record<string, string>>({})
+  const [agentName, setAgentName] = useState('')
   const [builtAgent, setBuiltAgent] = useState<Agent | null>(null)
   const [error, setError] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -60,6 +59,7 @@ export default function AgentBuilder() {
       const servers = await api.suggestTools(prompt)
       setSuggestedServers(servers)
       setCheckedServers(new Set(servers.map((s) => s.id)))
+      setAgentName(deriveAgentName(servers))
     } catch {
       setError('Failed to load suggested tools.')
     }
@@ -135,13 +135,13 @@ export default function AgentBuilder() {
     if (stage !== 3) return
     const selected = suggestedServers.filter((s) => checkedServers.has(s.id))
     const toolIds = selected.flatMap((s) => s.tools.map((t) => t.id))
-    const { name, description } = deriveNameDesc(prompt)
+    const name = agentName.trim() || deriveAgentName(selected)
 
     api
       .createAgent({
         name,
-        description,
-        system_prompt: `You are a helpful assistant that ${description}`,
+        description: prompt,
+        system_prompt: `You are a helpful assistant. ${prompt}`,
         model_id: 'gpt-4o-mini',
         temperature: 0.0,
         tool_ids: toolIds,
@@ -216,13 +216,25 @@ export default function AgentBuilder() {
             {/* System understanding */}
             <div className="flex gap-3 items-start">
               <ForgeAvatar />
-              <div className="text-sm text-gray-700 space-y-2">
-                <p>Got it. Here's what I think you're after:</p>
-                <div className="p-3 border border-gray-200 rounded-lg bg-gray-50">
-                  <p className="font-semibold text-gray-900">{deriveNameDesc(prompt).name}</p>
-                  <p className="text-gray-500 text-xs mt-1">{deriveNameDesc(prompt).description}</p>
+              <div className="text-sm text-gray-700 space-y-3 w-full">
+                <p>Got it. I searched your registry — here are the MCP servers that match your prompt:</p>
+                <div className="p-3 border border-gray-200 rounded-lg bg-gray-50 space-y-2">
+                  <div>
+                    <span className="text-xs text-gray-400 uppercase tracking-wide">Agent name</span>
+                    <input
+                      type="text"
+                      value={agentName}
+                      onChange={(e) => setAgentName(e.target.value)}
+                      className="mt-1 w-full border border-gray-300 rounded px-2 py-1 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#2e9e7a]"
+                      placeholder="my_agent"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-xs text-gray-400 uppercase tracking-wide">Purpose</span>
+                    <p className="text-gray-600 text-xs mt-0.5">{prompt}</p>
+                  </div>
                 </div>
-                <p>I searched your registry. These servers cover it — which should it use?</p>
+                <p>Select the servers you want this agent to use:</p>
               </div>
             </div>
 
@@ -244,6 +256,7 @@ export default function AgentBuilder() {
                           const next = new Set(checkedServers)
                           e.target.checked ? next.add(server.id) : next.delete(server.id)
                           setCheckedServers(next)
+                          setAgentName(deriveAgentName(suggestedServers.filter((s) => next.has(s.id))))
                         }}
                       />
                       <div>

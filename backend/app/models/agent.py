@@ -21,6 +21,7 @@ class Agent(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    api_token: Mapped[str] = mapped_column(Text, nullable=False, default=lambda: str(uuid.uuid4()))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
     )

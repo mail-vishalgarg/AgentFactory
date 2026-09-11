@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import Layout from './components/Layout'
 import AgentBuilder from './pages/AgentBuilder'
 import AgentDetail from './pages/AgentDetail'
+import Connections from './pages/Connections'
 import MCPRegistry from './pages/MCPRegistry'
 import MyAgents from './pages/MyAgents'
 
@@ -16,6 +17,7 @@ export default function App() {
           <Route path="agents" element={<MyAgents />} />
           <Route path="agents/:id" element={<AgentDetail />} />
           <Route path="agents/:id/playground" element={<AgentDetail />} />
+          <Route path="connections" element={<Connections />} />
         </Route>
       </Routes>
     </BrowserRouter>

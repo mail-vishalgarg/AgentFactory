@@ -40,6 +40,12 @@ async def list_all_servers(db: AsyncSession) -> list[MCPServer]:
     return list(result.scalars().all())
 
 
+async def delete_server_tools(db: AsyncSession, server_id: uuid.UUID) -> None:
+    from sqlalchemy import delete as sql_delete
+    await db.execute(sql_delete(MCPTool).where(MCPTool.mcp_server_id == server_id))
+    await db.flush()
+
+
 async def get_server_with_tools(db: AsyncSession, server_id: uuid.UUID) -> MCPServer | None:
     result = await db.execute(
         select(MCPServer)

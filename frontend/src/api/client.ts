@@ -49,6 +49,24 @@ export interface Agent {
   status: 'draft' | 'live' | 'archived'
   config: AgentConfig
   created_at: string
+  api_token: string
+}
+
+export interface Connection {
+  server_name: string
+  status: 'active' | 'revoked'
+  created_at: string
+  last_used_at: string | null
+}
+
+export interface AgentRun {
+  id: string
+  trigger: string
+  status: string
+  latency_ms: number
+  cost_usd: number
+  result: string
+  ran_at: string
 }
 
 export interface RegisterServerRequest {
@@ -58,6 +76,7 @@ export interface RegisterServerRequest {
   endpoint: string
   auth_type: 'none' | 'api_key' | 'oauth'
   is_shared: boolean
+  token?: string
 }
 
 export interface CreateAgentRequest {
@@ -115,4 +134,21 @@ export const api = {
     }),
   revokeCredential: (agentId: string, server: string) =>
     req<void>(`/agents/${agentId}/credentials/${server}`, { method: 'DELETE' }),
+  importDiscovery: (body: { server: { name: string; endpoint: string; transport: string }; tools: { name: string; description: string; input_schema: Record<string, unknown> }[]; auth_type?: string; is_shared?: boolean }) =>
+    req<MCPServer>('/mcp/servers/import', { method: 'POST', body: JSON.stringify(body) }),
+  syncServerTools: (serverId: string, token: string, endpoint?: string) =>
+    req<MCPServer>(`/mcp/servers/${serverId}/sync-tools`, {
+      method: 'POST',
+      body: JSON.stringify({ token, ...(endpoint ? { endpoint } : {}) }),
+    }),
+  listConnections: () => req<Connection[]>('/connections'),
+  addConnection: (server_name: string, token: string) =>
+    req<Connection>('/connections', { method: 'POST', body: JSON.stringify({ server_name, token }) }),
+  revokeConnection: (server_name: string) =>
+    req<void>(`/connections/${server_name}`, { method: 'DELETE' }),
+  listRuns: (agentId: string) => req<AgentRun[]>(`/agents/${agentId}/runs`),
+  downloadPostman: (agentId: string, token: string): Promise<Blob> =>
+    fetch(`${BASE}/v1/agents/${agentId}/postman`, {
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+    }).then((r) => r.blob()),
 }

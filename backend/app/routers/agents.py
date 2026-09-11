@@ -1,3 +1,4 @@
+import time
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -6,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
 from app.repositories import agent as agent_repo
+from app.repositories import agent_run as run_repo
 from app.schemas.agent import (
     AgentConfigSchema,
     AgentCreate,
@@ -13,7 +15,7 @@ from app.schemas.agent import (
     AgentRunRequest,
     AgentRunResponse,
 )
-from app.services.agent_builder import build_agent_config, build_langgraph_agent
+from app.services.agent_builder import build_agent_config, execute_agent
 from app.services.github_tools import verify_github_token, verify_slack_token
 
 router = APIRouter()
@@ -50,6 +52,7 @@ async def create_agent(
         status=agent.status,
         config=config,
         created_at=agent.created_at,
+        api_token=agent.api_token,
     )
 
 
@@ -64,6 +67,7 @@ async def list_agents(db: AsyncSession = Depends(get_db)) -> list[AgentResponse]
             status=a.status,
             config=AgentConfigSchema.model_validate(a.config),
             created_at=a.created_at,
+            api_token=a.api_token,
         )
         for a in agents
     ]
@@ -101,6 +105,7 @@ async def get_agent(agent_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> 
         status=agent.status,
         config=AgentConfigSchema.model_validate(agent.config),
         created_at=agent.created_at,
+        api_token=agent.api_token,
     )
 
 
@@ -120,13 +125,25 @@ async def run_agent(
         raise HTTPException(status_code=404, detail="Agent not found")
 
     config = AgentConfigSchema.model_validate(agent.config)
-    graph = build_langgraph_agent(config, credentials=agent.credentials or {})
+    start_time = time.monotonic()
+    try:
+        output = await execute_agent(config, credentials=agent.credentials or {}, message=body.message)
+    except Exception as exc:
+        latency_ms = int((time.monotonic() - start_time) * 1000)
+        cost_usd = latency_ms / 1000 * 0.004
+        await run_repo.record_run(
+            db, agent_id, trigger="Playground", status="error",
+            latency_ms=latency_ms, cost_usd=cost_usd, result=str(exc)[:200],
+        )
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    result = await graph.ainvoke({"messages": [("human", body.message)]})
-    messages = result.get("messages", [])
-    output = messages[-1].content if messages else "No response"
+    latency_ms = int((time.monotonic() - start_time) * 1000)
+    cost_usd = latency_ms / 1000 * 0.004
+    await run_repo.record_run(
+        db, agent_id, trigger="Playground", status="ok",
+        latency_ms=latency_ms, cost_usd=cost_usd, result=str(output)[:200],
+    )
 
-    # record last-used timestamp for each server used by this agent
     server_names = list({t.mcp_server_name for t in config.tools})
     await agent_repo.touch_server_last_used(db, agent_id, server_names)
 

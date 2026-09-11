@@ -8,6 +8,7 @@ interface RegisterForm {
   transport: 'http' | 'stdio' | 'sse'
   endpoint: string
   auth_type: 'none' | 'api_key' | 'oauth'
+  token: string
   visible: 'workspace' | 'everyone'
 }
 
@@ -17,6 +18,7 @@ const defaultForm: RegisterForm = {
   transport: 'http',
   endpoint: '',
   auth_type: 'api_key',
+  token: '',
   visible: 'workspace',
 }
 
@@ -28,6 +30,9 @@ export default function MCPRegistry() {
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
   const [toast, setToast] = useState('')
+  const [importJson, setImportJson] = useState('')
+  const [importError, setImportError] = useState('')
+  const [importing, setImporting] = useState(false)
 
   function loadServers() {
     setLoading(true)
@@ -58,6 +63,7 @@ export default function MCPRegistry() {
         endpoint: form.endpoint.trim(),
         auth_type: form.auth_type,
         is_shared: form.visible === 'everyone',
+        ...(form.token.trim() ? { token: form.token.trim() } : {}),
       }
       await api.registerServer(body)
       setToast(`"${form.name}" registered and tools loaded successfully!`)
@@ -70,6 +76,33 @@ export default function MCPRegistry() {
       setFormError(msg.includes('409') ? `A server named "${form.name}" is already registered.` : msg)
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  async function handleImport() {
+    setImportError('')
+    let parsed: { server: { name: string; endpoint: string; transport: string }; tools: { name: string; description: string; input_schema: Record<string, unknown> }[] }
+    try {
+      parsed = JSON.parse(importJson)
+      if (!parsed.server?.name || !parsed.server?.endpoint || !Array.isArray(parsed.tools)) {
+        throw new Error('JSON must have server.name, server.endpoint, and tools[]')
+      }
+    } catch (e: unknown) {
+      setImportError(e instanceof Error ? e.message : 'Invalid JSON')
+      return
+    }
+    setImporting(true)
+    try {
+      await api.importDiscovery(parsed)
+      setToast(`"${parsed.server.name}" imported with ${parsed.tools.length} tools.`)
+      setImportJson('')
+      setPanelOpen(false)
+      loadServers()
+      setTimeout(() => setToast(''), 4000)
+    } catch (e: unknown) {
+      setImportError(e instanceof Error ? e.message : 'Import failed')
+    } finally {
+      setImporting(false)
     }
   }
 
@@ -101,26 +134,6 @@ export default function MCPRegistry() {
           </button>
         </div>
 
-        {/* Info banner */}
-        <div className="mb-6 p-4 border-l-4 border-amber-400 bg-amber-50 rounded-r-md text-sm text-gray-700">
-          <p className="font-semibold text-amber-800 mb-2 uppercase text-xs tracking-wide">
-            What you must build on this screen
-          </p>
-          <ol className="list-decimal list-inside space-y-1">
-            <li>A form to register an MCP server: name, transport, endpoint, auth type.</li>
-            <li>
-              On save, <strong>your platform connects to the server and asks it what tools it has</strong>.
-              Nobody types tool names by hand.
-            </li>
-            <li>
-              Each tool is stored as <strong>read</strong>, <strong>write</strong> or{' '}
-              <strong>destructive</strong>. That marking forces an approval step later.
-            </li>
-            <li>A scheduled job re-checks every server and marks the dead ones.</li>
-            <li>Servers can be shared with everyone or private to one company.</li>
-          </ol>
-        </div>
-
         {/* Servers grid */}
         <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
           Shared Servers
@@ -128,9 +141,14 @@ export default function MCPRegistry() {
         {loading ? (
           <p className="text-sm text-gray-400">Loading…</p>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          <div className={`grid gap-4 ${panelOpen ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2 xl:grid-cols-3'}`}>
             {servers.map((s) => (
-              <ServerCard key={s.id} server={s} onDelete={handleDelete} />
+              <ServerCard
+                key={s.id}
+                server={s}
+                onDelete={handleDelete}
+                onUpdate={(updated) => setServers((prev) => prev.map((x) => x.id === updated.id ? updated : x))}
+              />
             ))}
           </div>
         )}
@@ -142,6 +160,7 @@ export default function MCPRegistry() {
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
             Registering a Server
           </p>
+
           <div className="flex gap-6">
             {/* Form */}
             <form onSubmit={handleSubmit} className="flex-1 space-y-4">
@@ -213,6 +232,24 @@ export default function MCPRegistry() {
                   <option value="oauth">oauth</option>
                 </select>
               </div>
+
+              {form.auth_type !== 'none' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Token <span className="text-gray-400 font-normal">(used to discover tools on save)</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={form.token}
+                    onChange={(e) => setForm({ ...form, token: e.target.value })}
+                    placeholder="ghp_… or xoxb-…"
+                    className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2e9e7a]"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Not stored on the server — only used during registration to fetch the tool list.
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Visible to</label>

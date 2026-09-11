@@ -1,4 +1,5 @@
-import { type MCPServer } from '../api/client'
+import { useState } from 'react'
+import { api, type MCPServer } from '../api/client'
 import ToolPermissionBadge from './ToolPermissionBadge'
 
 const statusColor: Record<string, string> = {
@@ -18,11 +19,35 @@ function timeAgo(iso: string | null): string {
 interface Props {
   server: MCPServer
   onDelete?: (id: string) => void
+  onUpdate?: (updated: MCPServer) => void
 }
 
-export default function ServerCard({ server, onDelete }: Props) {
-  const visibleTools = server.tools.slice(0, 4)
-  const extra = server.tools.length - 4
+export default function ServerCard({ server, onDelete, onUpdate }: Props) {
+  const [syncing, setSyncing] = useState(false)
+  const [syncToken, setSyncToken] = useState('')
+  const [syncEndpoint, setSyncEndpoint] = useState(server.endpoint)
+  const [showSyncInput, setShowSyncInput] = useState(false)
+  const [syncError, setSyncError] = useState('')
+
+  const visibleTools = server.tools.slice(0, 6)
+  const extra = server.tools.length - 6
+
+  async function handleSync() {
+    if (!syncToken.trim()) return
+    setSyncing(true)
+    setSyncError('')
+    try {
+      const endpointOverride = syncEndpoint.trim() !== server.endpoint ? syncEndpoint.trim() : undefined
+      const updated = await api.syncServerTools(server.id, syncToken.trim(), endpointOverride)
+      setSyncToken('')
+      setShowSyncInput(false)
+      onUpdate?.(updated)
+    } catch (err: unknown) {
+      setSyncError(err instanceof Error ? err.message : 'Sync failed')
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   return (
     <div className="bg-white border border-gray-200 rounded-lg p-4 flex flex-col gap-3">
@@ -85,6 +110,54 @@ export default function ServerCard({ server, onDelete }: Props) {
           <span className="text-xs text-gray-400">+ {extra} more</span>
         )}
       </div>
+
+      {/* Sync tools */}
+      {server.auth_type !== 'none' && (
+        <div className="border-t border-gray-100 pt-2">
+          {showSyncInput ? (
+            <div className="flex flex-col gap-1.5">
+              <input
+                type="text"
+                value={syncEndpoint}
+                onChange={(e) => setSyncEndpoint(e.target.value)}
+                placeholder="https://api.githubcopilot.com/mcp/"
+                className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#2e9e7a] font-mono"
+              />
+              <input
+                type="password"
+                value={syncToken}
+                onChange={(e) => setSyncToken(e.target.value)}
+                placeholder="Paste token…"
+                className="w-full border border-gray-300 rounded px-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#2e9e7a]"
+              />
+              {syncError && <p className="text-xs text-red-500">{syncError}</p>}
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSync}
+                  disabled={syncing || !syncToken.trim()}
+                  className="text-xs px-2 py-1 rounded text-white disabled:opacity-50"
+                  style={{ backgroundColor: '#2e9e7a' }}
+                >
+                  {syncing ? 'Syncing…' : 'Sync'}
+                </button>
+                <button
+                  onClick={() => { setShowSyncInput(false); setSyncToken(''); setSyncError(''); setSyncEndpoint(server.endpoint) }}
+                  className="text-xs px-2 py-1 rounded border border-gray-300 text-gray-600"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowSyncInput(true)}
+              className="text-xs text-[#2e9e7a] hover:underline"
+            >
+              ↻ Sync tools from server
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Footer */}
       <p className="text-xs text-gray-400">checked {timeAgo(server.last_checked_at)}</p>

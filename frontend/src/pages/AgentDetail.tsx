@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { api, type Agent, type AgentConfig } from '../api/client'
+import { api, type Agent, type AgentConfig, type AgentRun } from '../api/client'
 
-type Tab = 'overview' | 'playground' | 'connections'
+type Tab = 'overview' | 'playground' | 'connections' | 'runs' | 'api'
 
 interface CredStatus {
   ok: boolean
@@ -165,6 +165,97 @@ function AgentGraph({ agent }: { agent: Agent }) {
   )
 }
 
+function ApiTab({ agent }: { agent: Agent }) {
+  const baseUrl = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_API_URL ?? 'http://localhost:8000'
+  const curlSnippet = `curl -X POST ${baseUrl}/v1/agents/${agent.id}/invoke \\
+  -H "Authorization: Bearer $AGENT_FACTORY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"input": "Your message here"}'`
+
+  const also = [
+    { method: 'POST', path: `/v1/agents/${agent.id}/stream`, desc: 'Same, streamed over SSE' },
+    { method: 'POST', path: `/v1/agents/${agent.id}/resume`, desc: 'Answer a pending approval' },
+    { method: 'GET',  path: `/v1/agents/${agent.id}/postman`, desc: 'This collection, as JSON' },
+  ]
+
+  async function handleDownload() {
+    const blob = await api.downloadPostman(agent.id, agent.api_token)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${agent.name}_collection.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  function copyToken() {
+    navigator.clipboard.writeText(agent.api_token)
+  }
+
+  return (
+    <div className="flex-1 overflow-auto bg-gray-50 p-8">
+      <div className="max-w-3xl space-y-6">
+        <div>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Endpoint</p>
+          <div className="border border-gray-200 rounded-lg bg-white overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+              <span className="font-mono text-sm text-gray-800">
+                POST /v1/agents/{agent.id}/invoke
+              </span>
+              <button
+                onClick={handleDownload}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white rounded-md bg-gray-900 hover:bg-gray-700"
+              >
+                ↓ Download Postman collection
+              </button>
+            </div>
+            <pre className="px-4 py-4 text-xs text-gray-200 bg-gray-900 overflow-x-auto font-mono leading-relaxed">
+              {curlSnippet}
+            </pre>
+          </div>
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Your API token</p>
+          <div className="border border-gray-200 rounded-lg bg-white px-4 py-3 flex items-center gap-3">
+            <input
+              type="password"
+              readOnly
+              value={agent.api_token}
+              className="flex-1 font-mono text-sm text-gray-700 bg-transparent border-none outline-none"
+            />
+            <button
+              onClick={copyToken}
+              className="px-3 py-1 text-xs font-medium border border-gray-300 rounded text-gray-600 hover:bg-gray-50"
+            >
+              Copy
+            </button>
+          </div>
+          <p className="text-xs text-gray-400 mt-1.5">
+            Use this as{' '}
+            <code className="font-mono bg-gray-100 px-1 rounded">$AGENT_FACTORY</code>
+            {' '}in the curl command above. Wrong tokens receive 404, not 403.
+          </p>
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Also available</p>
+          <div className="border border-gray-200 rounded-lg bg-white overflow-hidden divide-y divide-gray-100">
+            {also.map((row) => (
+              <div key={row.path} className="flex items-center px-4 py-3 gap-4">
+                <span className="font-mono text-sm text-gray-800 w-80 truncate">
+                  {row.method} {row.path}
+                </span>
+                <span className="text-sm text-gray-400">{row.desc}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function AgentDetail() {
   const { id } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
@@ -179,6 +270,10 @@ export default function AgentDetail() {
   const [updateStatus, setUpdateStatus] = useState<Record<string, 'idle' | 'saving' | 'ok' | 'error'>>({})
   const [updateMsg, setUpdateMsg] = useState<Record<string, string>>({})
   const [showUpdate, setShowUpdate] = useState<Record<string, boolean>>({})
+
+  // Runs state
+  const [runs, setRuns] = useState<AgentRun[]>([])
+  const [runsLoading, setRunsLoading] = useState(false)
 
   // Playground state
   const [messages, setMessages] = useState<Message[]>([])
@@ -199,6 +294,12 @@ export default function AgentDetail() {
       .then(setCredStatus)
       .finally(() => setCredChecking(false))
   }, [agent, id])
+
+  useEffect(() => {
+    if (tab !== 'runs' || !id) return
+    setRunsLoading(true)
+    api.listRuns(id).then(setRuns).finally(() => setRunsLoading(false))
+  }, [tab, id])
 
   async function handleUpdateToken(server: string) {
     const token = newTokens[server]?.trim()
@@ -231,8 +332,10 @@ export default function AgentDetail() {
     try {
       const res = await api.runAgent(id, userMsg)
       setMessages((prev) => [...prev, { role: 'assistant', content: res.output }])
+      api.listRuns(id).then(setRuns)
     } catch {
       setMessages((prev) => [...prev, { role: 'assistant', content: '⚠ Error running agent.' }])
+      api.listRuns(id).then(setRuns)
     } finally {
       setSending(false)
     }
@@ -261,6 +364,8 @@ export default function AgentDetail() {
     { key: 'overview', label: 'Overview' },
     { key: 'playground', label: 'Playground' },
     { key: 'connections', label: 'Connections', badge: expiredServers.length || undefined },
+    { key: 'runs', label: 'Runs' },
+    { key: 'api', label: 'API' },
   ]
 
   return (
@@ -587,6 +692,82 @@ export default function AgentDetail() {
             })()}
           </div>
         </div>
+      )}
+
+      {/* ── Runs tab ── */}
+      {tab === 'runs' && (
+        <div className="flex-1 overflow-auto bg-gray-50 p-8">
+          <div className="max-w-5xl">
+            {runsLoading ? (
+              <p className="text-sm text-gray-400">Loading…</p>
+            ) : runs.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <p className="text-gray-400 text-sm">No runs yet. Try the agent in the Playground.</p>
+              </div>
+            ) : (
+              <div className="border border-gray-200 rounded-lg overflow-hidden bg-white">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">When</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Trigger</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Latency</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Cost</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Result</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {runs.map((run) => (
+                      <tr key={run.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 text-gray-500 whitespace-nowrap">{timeAgo(run.ran_at)}</td>
+                        <td className="px-4 py-3">
+                          <span className="inline-block px-2 py-0.5 text-xs border border-gray-300 rounded text-gray-600">
+                            {run.trigger}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {run.status === 'ok' && (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700">
+                              <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                              ok
+                            </span>
+                          )}
+                          {run.status === 'error' && (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-red-600">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-500 inline-block" />
+                              error
+                            </span>
+                          )}
+                          {run.status === 'approval' && (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+                              approval
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-gray-700 font-medium whitespace-nowrap">
+                          {(run.latency_ms / 1000).toFixed(1)}s
+                        </td>
+                        <td className="px-4 py-3 text-gray-700 font-medium whitespace-nowrap">
+                          ${run.cost_usd.toFixed(3)}
+                        </td>
+                        <td className="px-4 py-3 text-gray-500 max-w-xs">
+                          {run.result.length > 80 ? run.result.slice(0, 80) + '…' : run.result}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── API tab ── */}
+      {tab === 'api' && (
+        <ApiTab agent={agent} />
       )}
 
       {/* ── Playground tab ── */}

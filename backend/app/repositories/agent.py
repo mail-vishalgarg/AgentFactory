@@ -15,7 +15,7 @@ async def save_agent(
     config_dict: dict[str, Any],
     credentials: dict[str, str] | None = None,
 ) -> Agent:
-    agent = Agent(name=name, description=description, config=config_dict, credentials=credentials or {})
+    agent = Agent(name=name, description=description, config=config_dict, credentials=credentials or {}, api_token=str(uuid.uuid4()))
     db.add(agent)
     await db.commit()
     await db.refresh(agent)
