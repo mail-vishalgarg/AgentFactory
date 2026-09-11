@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent Creation Flow — MVP AgentBuilder</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f8fafc;
+      color: #1e293b;
+      padding: 40px 24px 80px;
+    }
+
+    h1 {
+      text-align: center;
+      font-size: 22px;
+      font-weight: 700;
+      margin-bottom: 6px;
+      color: #0f172a;
+    }
+    .subtitle {
+      text-align: center;
+      font-size: 13px;
+      color: #64748b;
+      margin-bottom: 48px;
+    }
+
+    /* ── layout ── */
+    .diagram {
+      display: flex;
+      gap: 0;
+      justify-content: center;
+      align-items: flex-start;
+    }
+
+    /* ── column ── */
+    .col {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 220px;
+      flex-shrink: 0;
+    }
+
+    .col-header {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      padding: 5px 14px;
+      border-radius: 20px;
+      margin-bottom: 20px;
+    }
+    .col-header.frontend  { background: #dbeafe; color: #1d4ed8; }
+    .col-header.backend   { background: #dcfce7; color: #15803d; }
+    .col-header.service   { background: #fef9c3; color: #a16207; }
+    .col-header.repo      { background: #ede9fe; color: #6d28d9; }
+    .col-header.db        { background: #fee2e2; color: #b91c1c; }
+
+    /* ── connector lines between columns ── */
+    .connector {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 60px;
+      flex-shrink: 0;
+      padding-top: 56px;
+    }
+    .h-arrow {
+      width: 100%;
+      height: 2px;
+      background: #94a3b8;
+      position: relative;
+    }
+    .h-arrow::after {
+      content: '';
+      position: absolute;
+      right: -1px;
+      top: -5px;
+      border: 6px solid transparent;
+      border-left-color: #94a3b8;
+      border-right: none;
+    }
+    .h-label {
+      font-size: 10px;
+      color: #64748b;
+      margin-top: 4px;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    /* ── boxes ── */
+    .box {
+      width: 200px;
+      border-radius: 10px;
+      padding: 12px 14px;
+      font-size: 12px;
+      line-height: 1.5;
+      border: 1.5px solid;
+      position: relative;
+      cursor: default;
+      transition: box-shadow .15s;
+    }
+    .box:hover { box-shadow: 0 4px 16px rgba(0,0,0,.12); }
+
+    .box .tag {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-bottom: 5px;
+    }
+    .box .title {
+      font-weight: 600;
+      font-size: 13px;
+      margin-bottom: 3px;
+    }
+    .box .file {
+      font-size: 10px;
+      font-family: 'SF Mono', Menlo, monospace;
+      opacity: .7;
+      margin-top: 4px;
+    }
+    .box ul {
+      margin-top: 5px;
+      padding-left: 14px;
+      color: inherit;
+      opacity: .85;
+    }
+    .box ul li { margin-bottom: 2px; }
+
+    /* colour themes */
+    .box.fe   { background: #eff6ff; border-color: #93c5fd; color: #1e3a8a; }
+    .box.fe .tag { background: #bfdbfe; color: #1d4ed8; }
+
+    .box.be   { background: #f0fdf4; border-color: #86efac; color: #14532d; }
+    .box.be .tag { background: #bbf7d0; color: #15803d; }
+
+    .box.svc  { background: #fefce8; border-color: #fde047; color: #713f12; }
+    .box.svc .tag { background: #fef08a; color: #a16207; }
+
+    .box.repo { background: #f5f3ff; border-color: #c4b5fd; color: #3b0764; }
+    .box.repo .tag { background: #ddd6fe; color: #6d28d9; }
+
+    .box.db   { background: #fff1f2; border-color: #fca5a5; color: #7f1d1d; }
+    .box.db .tag { background: #fecdd3; color: #b91c1c; }
+
+    .box.decision {
+      background: #fff7ed;
+      border-color: #fdba74;
+      color: #7c2d12;
+      clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+      width: 150px;
+      height: 80px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .box.decision .tag, .box.decision .file { display: none; }
+
+    /* ── vertical arrows inside a column ── */
+    .v-arrow {
+      width: 2px;
+      height: 24px;
+      background: #94a3b8;
+      position: relative;
+      margin: 0 auto;
+    }
+    .v-arrow::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: -5px;
+      border: 6px solid transparent;
+      border-top-color: #94a3b8;
+      border-bottom: none;
+    }
+    .v-label {
+      font-size: 10px;
+      color: #64748b;
+      text-align: center;
+      margin: -6px 0 4px;
+    }
+
+    /* ── run section ── */
+    .run-section {
+      max-width: 920px;
+      margin: 60px auto 0;
+    }
+    .run-section h2 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 4px;
+    }
+    .run-section p {
+      font-size: 12px;
+      color: #64748b;
+      margin-bottom: 28px;
+    }
+
+    /* ── legend ── */
+    .legend {
+      display: flex;
+      gap: 20px;
+      justify-content: center;
+      flex-wrap: wrap;
+      margin-bottom: 36px;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #475569;
+    }
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+
+<h1>Agent Creation Flow</h1>
+<p class="subtitle">MVP AgentBuilder · end-to-end walkthrough from user prompt to deployed ReAct agent</p>
+
+<!-- ── LEGEND ── -->
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#93c5fd"></div>Frontend (React)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#86efac"></div>Router (FastAPI)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fde047"></div>Service</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#c4b5fd"></div>Repository</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fca5a5"></div>Database</div>
+</div>
+
+<!-- ═══════════════════════════════════════════
+     SECTION 1 — AGENT CREATION  (POST /agents)
+════════════════════════════════════════════ -->
+
+<div class="diagram">
+
+  <!-- ── FRONTEND COL ── -->
+  <div class="col">
+    <div class="col-header frontend">Frontend</div>
+
+    <div class="box fe">
+      <div class="tag">Stage 0</div>
+      <div class="title">User types prompt</div>
+      <div class="file">AgentBuilder.tsx</div>
+      <ul>
+        <li>Natural-language description</li>
+        <li>Press Enter / Send</li>
+      </ul>
+    </div>
+
+    <div class="v-arrow"></div>
+
+    <div class="box fe">
+      <div class="tag">Stage 1</div>
+      <div class="title">Tool suggestion</div>
+      <div class="file">api.suggestTools(prompt)</div>
+      <ul>
+        <li>Fetches matching MCP servers</li>
+        <li>User checks / unchecks</li>
+      </ul>
+    </div>
+
+    <div class="v-arrow"></div>
+
+    <div class="box fe" style="background:#fff7ed;border-color:#fdba74;color:#7c2d12;">
+      <div class="tag" style="background:#fed7aa;color:#c2410c;">Decision</div>
+      <div class="title">Needs credentials?</div>
+      <ul>
+        <li>auth_type !== 'none' → Stage 2</li>
+        <li>all none → skip to Stage 3</li>
+      </ul>
+    </div>
+
+    <div class="v-arrow"></div>
+
+    <div class="box fe">
+      <div class="tag">Stage 2</div>
+      <div class="title">Enter credentials</div>
+      <div class="file">api.verifyToken(server, token)</div>
+      <ul>
+        <li>GitHub / Slack tokens</li>
+        <li>Validates via backend</li>
+        <li>All OK → Stage 3</li>
+      </ul>
+    </div>
+
+    <div class="v-arrow"></div>
+
+    <div class="box fe">
+      <div class="tag">Stage 3</div>
+      <div class="title">api.createAgent()</div>
+      <div class="file">POST /agents</div>
+      <ul>
+        <li>name, description</li>
+        <li>system_prompt</li>
+        <li>tool_ids[]</li>
+        <li>credentials{}</li>
+      </ul>
+    </div>
+
+    <div class="v-arrow"></div>
+
+    <div class="box fe">
+      <div class="tag">Stage 4</div>
+      <div class="title">Agent card shown</div>
+      <div class="file">AgentBuilder.tsx:351</div>
+      <ul>
+        <li>Open Playground</li>
+        <li>Go to My Agents</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- connector → router -->
+  <div class="connector">
+    <div class="h-arrow"></div>
+    <div class="h-label">POST /agents</div>
+  </div>
+
+  <!-- ── ROUTER COL ── -->
+  <div class="col">
+    <div class="col-header backend">Router</div>
+
+    <div class="box be">
+      <div class="tag">Router</div>
+      <div class="title">create_agent()</div>
+      <div class="file">routers/agents.py:22</div>
+      <ul>
+        <li>Validates AgentCreate</li>
+        <li>Calls build_agent_config</li>
+        <li>Calls save_agent</li>
+        <li>Returns AgentResponse</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- connector → service -->
+  <div class="connector">
+    <div class="h-arrow"></div>
+    <div class="h-label">build_agent_config</div>
+  </div>
+
+  <!-- ── SERVICE COL ── -->
+  <div class="col">
+    <div class="col-header service">Service</div>
+
+    <div class="box svc">
+      <div class="tag">Service</div>
+      <div class="title">build_agent_config()</div>
+      <div class="file">services/agent_builder.py:16</div>
+      <ul>
+        <li>Fetch Tool rows by IDs</li>
+        <li>Build ToolConfig list</li>
+        <li>Build ModelConfig</li>
+        <li>Build GraphConfig</li>
+        <li>Returns AgentConfigSchema</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- connector → repo -->
+  <div class="connector">
+    <div class="h-arrow"></div>
+    <div class="h-label">save_agent</div>
+  </div>
+
+  <!-- ── REPO COL ── -->
+  <div class="col">
+    <div class="col-header repo">Repository</div>
+
+    <div class="box repo">
+      <div class="tag">Repo</div>
+      <div class="title">save_agent()</div>
+      <div class="file">repositories/agent.py:10</div>
+      <ul>
+        <li>Creates Agent model</li>
+        <li>config stored as JSONB</li>
+        <li>credentials stored as JSONB</li>
+        <li>db.commit()</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- connector → DB -->
+  <div class="connector">
+    <div class="h-arrow"></div>
+    <div class="h-label">INSERT</div>
+  </div>
+
+  <!-- ── DB COL ── -->
+  <div class="col">
+    <div class="col-header db">PostgreSQL</div>
+
+    <div class="box db">
+      <div class="tag">Table</div>
+      <div class="title">agents</div>
+      <ul>
+        <li>id (UUID)</li>
+        <li>name</li>
+        <li>description</li>
+        <li>status = "active"</li>
+        <li>config (JSONB)</li>
+        <li>credentials (JSONB)</li>
+        <li>created_at</li>
+      </ul>
+    </div>
+  </div>
+
+</div><!-- /diagram -->
+
+
+<!-- ═══════════════════════════════════════
+     SECTION 2 — AGENT RUN  (POST /agents/{id}/run)
+════════════════════════════════════════════ -->
+
+<div class="run-section">
+  <h2>Agent Runtime — POST /agents/{id}/run</h2>
+  <p>How the saved config is turned into a live LangGraph ReAct agent and invoked.</p>
+
+  <div class="diagram">
+
+    <!-- FRONTEND -->
+    <div class="col">
+      <div class="col-header frontend">Frontend</div>
+      <div class="box fe">
+        <div class="tag">Playground</div>
+        <div class="title">User sends message</div>
+        <div class="file">pages/Playground.tsx</div>
+        <ul>
+          <li>POST /agents/{id}/run</li>
+          <li>{ "message": "..." }</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="connector">
+      <div class="h-arrow"></div>
+      <div class="h-label">POST /run</div>
+    </div>
+
+    <!-- ROUTER -->
+    <div class="col">
+      <div class="col-header backend">Router</div>
+      <div class="box be">
+        <div class="tag">Router</div>
+        <div class="title">run_agent()</div>
+        <div class="file">routers/agents.py:83</div>
+        <ul>
+          <li>Load agent from DB</li>
+          <li>Validate config</li>
+          <li>Call build_langgraph_agent</li>
+          <li>graph.ainvoke(messages)</li>
+          <li>Return last message</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="connector">
+      <div class="h-arrow"></div>
+      <div class="h-label">build_langgraph_agent</div>
+    </div>
+
+    <!-- SERVICE -->
+    <div class="col">
+      <div class="col-header service">Service</div>
+      <div class="box svc">
+        <div class="tag">Service</div>
+        <div class="title">build_langgraph_agent()</div>
+        <div class="file">services/agent_builder.py:55</div>
+        <ul>
+          <li>ChatOpenAI(model, temp)</li>
+          <li>_resolve_tools(configs, creds)</li>
+          <li>create_react_agent(llm, tools, prompt)</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="connector">
+      <div class="h-arrow"></div>
+      <div class="h-label">_resolve_tools</div>
+    </div>
+
+    <!-- TOOL RESOLVER -->
+    <div class="col">
+      <div class="col-header service">Tool Resolver</div>
+      <div class="box svc">
+        <div class="tag">Service</div>
+        <div class="title">_resolve_tools()</div>
+        <div class="file">agent_builder.py:81</div>
+        <ul>
+          <li>"github" in cred key → real GitHub tools</li>
+          <li>"slack" in cred key → placeholder</li>
+          <li>all others → placeholder</li>
+        </ul>
+      </div>
+
+      <div class="v-arrow"></div>
+
+      <div class="box svc">
+        <div class="tag">Real tools</div>
+        <div class="title">make_github_tools()</div>
+        <div class="file">services/github_tools.py:9</div>
+        <ul>
+          <li>github__list_issues</li>
+          <li>github__get_issue</li>
+          <li>github__get_last_commit</li>
+        </ul>
+      </div>
+
+      <div class="v-arrow"></div>
+
+      <div class="box svc" style="background:#f0fdf4;border-color:#86efac;color:#14532d;">
+        <div class="tag" style="background:#bbf7d0;color:#15803d;">LangGraph</div>
+        <div class="title">ReAct loop</div>
+        <div class="file">langgraph.prebuilt</div>
+        <ul>
+          <li>LLM reasons → picks tool</li>
+          <li>Tool executes → observation</li>
+          <li>Loops until final answer</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- external -->
+    <div class="connector">
+      <div class="h-arrow"></div>
+      <div class="h-label">HTTP / OpenAI</div>
+    </div>
+
+    <div class="col">
+      <div class="col-header db">External</div>
+      <div class="box db">
+        <div class="tag">API</div>
+        <div class="title">api.github.com</div>
+        <ul>
+          <li>GET /repos/.../issues</li>
+          <li>GET /repos/.../commits</li>
+          <li>Bearer token auth</li>
+        </ul>
+      </div>
+
+      <div class="v-arrow"></div>
+
+      <div class="box db">
+        <div class="tag">LLM</div>
+        <div class="title">OpenAI API</div>
+        <ul>
+          <li>gpt-4o-mini (default)</li>
+          <li>temperature = 0.0</li>
+          <li>max_tokens = 4096</li>
+        </ul>
+      </div>
+    </div>
+
+  </div><!-- /run diagram -->
+</div><!-- /run-section -->
+
+</body>
+</html>

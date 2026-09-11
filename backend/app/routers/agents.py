@@ -1,0 +1,232 @@
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.db import get_db
+from app.repositories import agent as agent_repo
+from app.schemas.agent import (
+    AgentConfigSchema,
+    AgentCreate,
+    AgentResponse,
+    AgentRunRequest,
+    AgentRunResponse,
+)
+from app.services.agent_builder import build_agent_config, build_langgraph_agent
+from app.services.github_tools import verify_github_token, verify_slack_token
+
+router = APIRouter()
+
+
+@router.post("", response_model=AgentResponse, status_code=201)
+async def create_agent(
+    request: AgentCreate, db: AsyncSession = Depends(get_db)
+) -> AgentResponse:
+    config = await build_agent_config(db, request)
+    config_dict = config.model_dump(mode="json")
+
+    # Auto-populate credentials from existing agents for servers not provided
+    credentials = dict(request.credentials or {})
+    needed_servers = {t.mcp_server_name for t in config.tools}
+    for server in needed_servers:
+        already_have = any(server.lower() in k.lower() for k in credentials)
+        if not already_have:
+            existing_token = await agent_repo.get_reusable_token_for_server(db, server)
+            if existing_token:
+                credentials[server] = existing_token
+
+    agent = await agent_repo.save_agent(
+        db,
+        name=request.name,
+        description=request.description,
+        config_dict=config_dict,
+        credentials=credentials,
+    )
+    return AgentResponse(
+        id=agent.id,
+        name=agent.name,
+        description=agent.description,
+        status=agent.status,
+        config=config,
+        created_at=agent.created_at,
+    )
+
+
+@router.get("", response_model=list[AgentResponse])
+async def list_agents(db: AsyncSession = Depends(get_db)) -> list[AgentResponse]:
+    agents = await agent_repo.list_agents(db)
+    return [
+        AgentResponse(
+            id=a.id,
+            name=a.name,
+            description=a.description,
+            status=a.status,
+            config=AgentConfigSchema.model_validate(a.config),
+            created_at=a.created_at,
+        )
+        for a in agents
+    ]
+
+
+@router.get("/credential-availability")
+async def get_credential_availability(
+    servers: str, db: AsyncSession = Depends(get_db)
+) -> dict[str, dict]:
+    """Check which servers already have tokens stored in any existing agent."""
+    server_list = [s.strip() for s in servers.split(",") if s.strip()]
+    all_agents = await agent_repo.list_agents(db)
+    result: dict[str, dict] = {}
+    for server in server_list:
+        found = any(
+            any(
+                server.lower() in k.lower() or k.lower() in server.lower()
+                for k in (a.credentials or {})
+            )
+            for a in all_agents
+        )
+        result[server] = {"available": found}
+    return result
+
+
+@router.get("/{agent_id}", response_model=AgentResponse)
+async def get_agent(agent_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> AgentResponse:
+    agent = await agent_repo.get_agent(db, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return AgentResponse(
+        id=agent.id,
+        name=agent.name,
+        description=agent.description,
+        status=agent.status,
+        config=AgentConfigSchema.model_validate(agent.config),
+        created_at=agent.created_at,
+    )
+
+
+@router.delete("/{agent_id}", status_code=204)
+async def delete_agent(agent_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> None:
+    deleted = await agent_repo.delete_agent(db, agent_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+
+@router.post("/{agent_id}/run", response_model=AgentRunResponse)
+async def run_agent(
+    agent_id: uuid.UUID, body: AgentRunRequest, db: AsyncSession = Depends(get_db)
+) -> AgentRunResponse:
+    agent = await agent_repo.get_agent(db, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    config = AgentConfigSchema.model_validate(agent.config)
+    graph = build_langgraph_agent(config, credentials=agent.credentials or {})
+
+    result = await graph.ainvoke({"messages": [("human", body.message)]})
+    messages = result.get("messages", [])
+    output = messages[-1].content if messages else "No response"
+
+    # record last-used timestamp for each server used by this agent
+    server_names = list({t.mcp_server_name for t in config.tools})
+    await agent_repo.touch_server_last_used(db, agent_id, server_names)
+
+    return AgentRunResponse(output=str(output), agent_id=str(agent_id))
+
+
+@router.get("/{agent_id}/config")
+async def get_agent_config(
+    agent_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+) -> dict:
+    agent = await agent_repo.get_agent(db, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return agent.config
+
+
+class VerifyTokenRequest(BaseModel):
+    server: str
+    token: str
+
+
+class VerifyTokenResponse(BaseModel):
+    ok: bool
+    message: str
+
+
+@router.get("/{agent_id}/credential-status")
+async def get_credential_status(
+    agent_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+) -> dict[str, dict]:
+    agent = await agent_repo.get_agent(db, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    last_used: dict = agent.server_last_used or {}
+    result: dict[str, dict] = {}
+    for key, token in (agent.credentials or {}).items():
+        if "github" in key.lower():
+            ok, msg = verify_github_token(token)
+        elif "slack" in key.lower():
+            ok, msg = verify_slack_token(token)
+        else:
+            ok, msg = True, "No verification available"
+        # Key by the actual credential key (mcp_server_name) so the frontend can match it
+        result[key] = {
+            "ok": ok,
+            "message": msg,
+            "key": key,
+            "last_used": last_used.get(key),
+        }
+    return result
+
+
+class UpdateCredentialRequest(BaseModel):
+    server: str
+    token: str
+
+
+@router.patch("/{agent_id}/credentials", response_model=VerifyTokenResponse)
+async def update_agent_credentials(
+    agent_id: uuid.UUID, body: UpdateCredentialRequest, db: AsyncSession = Depends(get_db)
+) -> VerifyTokenResponse:
+    agent = await agent_repo.get_agent(db, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    if "github" in body.server.lower():
+        ok, msg = verify_github_token(body.token)
+    elif "slack" in body.server.lower():
+        ok, msg = verify_slack_token(body.token)
+    else:
+        ok, msg = True, f"{body.server} token accepted"
+
+    if ok:
+        await agent_repo.update_credentials(db, agent_id, body.server, body.token)
+
+    return VerifyTokenResponse(ok=ok, message=msg)
+
+
+@router.delete("/{agent_id}/credentials/{server}", status_code=204)
+async def revoke_agent_credential(
+    agent_id: uuid.UUID, server: str, db: AsyncSession = Depends(get_db)
+) -> None:
+    agent = await agent_repo.get_agent(db, agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    creds = dict(agent.credentials or {})
+    keys_to_remove = [k for k in creds if server.lower() in k.lower()]
+    for k in keys_to_remove:
+        del creds[k]
+    agent.credentials = creds
+    await db.commit()
+
+
+@router.post("/verify-token", response_model=VerifyTokenResponse)
+async def verify_token(body: VerifyTokenRequest) -> VerifyTokenResponse:
+    if "github" in body.server.lower():
+        ok, msg = verify_github_token(body.token)
+        return VerifyTokenResponse(ok=ok, message=msg)
+    if "slack" in body.server.lower():
+        ok, msg = verify_slack_token(body.token)
+        return VerifyTokenResponse(ok=ok, message=msg)
+    return VerifyTokenResponse(ok=True, message=f"{body.server} token accepted")
