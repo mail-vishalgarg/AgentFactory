@@ -44,69 +44,6 @@ async def discover_tools_from_mcp(endpoint: str, token: str) -> list[dict]:
                 for t in tools_response.tools
             ]
 
-_SEED_SERVERS = [
-    {
-        "name": "github",
-        "description": "Issues, pull requests, commits and repository trees.",
-        "transport": "http",
-        "endpoint": "https://mcp.example.com/github",
-        "auth_type": "api_key",
-        "tools": [
-            {
-                "name": "list_issues",
-                "description": "List open issues in a repository",
-                "permission_level": "read",
-            },
-            {
-                "name": "get_issue",
-                "description": "Get details of a specific issue",
-                "permission_level": "read",
-            },
-            {
-                "name": "get_last_commit",
-                "description": "Get the most recent commit on a branch of a repository",
-                "permission_level": "read",
-            },
-        ],
-    },
-    {
-        "name": "slack",
-        "description": "Read channels and post messages to a workspace.",
-        "transport": "http",
-        "endpoint": "https://mcp.example.com/slack",
-        "auth_type": "oauth",
-        "tools": [
-            {
-                "name": "read_channel",
-                "description": "Read messages from a Slack channel",
-                "permission_level": "read",
-            },
-            {
-                "name": "post_message",
-                "description": "Post a message to a Slack channel",
-                "permission_level": "write",
-            },
-        ],
-    },
-]
-
-
-async def seed_mcp_data(db: AsyncSession) -> None:
-    for server_data in _SEED_SERVERS:
-        existing = await mcp_repo.get_server_by_name(db, server_data["name"])
-        if existing:
-            continue
-
-        tools = server_data.pop("tools")
-        server = await mcp_repo.create_server(db, **server_data)
-
-        for tool_data in tools:
-            await mcp_repo.create_tool(db, mcp_server_id=server.id, input_schema={}, **tool_data)
-
-        await db.commit()
-        # restore for next iteration
-        server_data["tools"] = tools
-
 
 async def list_servers(db: AsyncSession) -> list[MCPServer]:
     return await mcp_repo.list_all_servers(db)

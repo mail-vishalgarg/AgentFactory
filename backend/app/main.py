@@ -1,31 +1,15 @@
-from contextlib import asynccontextmanager
-from collections.abc import AsyncGenerator
 import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.db import AsyncSessionLocal
 from app.routers import agent_runs, agents, connections, invoke, mcp_registry
-from app.services.mcp_registry import seed_mcp_data
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
-    async with AsyncSessionLocal() as db:
-        try:
-            await seed_mcp_data(db)
-        except Exception:
-            # DB may not be ready yet (first run before migration); skip seed
-            pass
-    yield
 
 
 app = FastAPI(
-    title="MVP AgentBuilder",
+    title="AgentFactory",
     description="MCP Registry + Agent Builder API",
     version="0.1.0",
-    lifespan=lifespan,
 )
 
 app.add_middleware(

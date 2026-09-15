@@ -191,11 +191,6 @@ async def import_discovery(
     return MCPServerResponse.model_validate(refreshed)
 
 
-@router.post("/seed", status_code=201)
-async def seed_servers(db: AsyncSession = Depends(get_db)) -> dict[str, str]:
-    await svc.seed_mcp_data(db)
-    return {"status": "seeded"}
-
 
 @router.get("/tools/suggest", response_model=list[MCPServerResponse])
 async def suggest_tools(prompt: str, db: AsyncSession = Depends(get_db)) -> list[MCPServerResponse]:
