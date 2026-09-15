@@ -13,15 +13,6 @@ from app.services import mcp_registry as svc
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
-# Fallback tools used only when live discovery is unavailable
-_KNOWN_TOOLS: dict[str, list[dict]] = {
-    "slack": [
-        {"name": "read_channel", "description": "Read messages from a Slack channel", "permission_level": "read", "input_schema": {}},
-        {"name": "post_message", "description": "Post a message to a Slack channel", "permission_level": "write", "input_schema": {}},
-        {"name": "delete_message", "description": "Delete a message the bot posted in a Slack channel", "permission_level": "destructive", "input_schema": {}},
-    ],
-}
-
 
 @router.get("/servers", response_model=list[MCPServerResponse])
 async def list_servers(db: AsyncSession = Depends(get_db)) -> list[MCPServerResponse]:
@@ -46,9 +37,6 @@ async def register_server(
         except Exception as exc:
             logger.warning("MCP discovery failed for %s: %s", body.endpoint, exc)
 
-    if not tools:
-        name_lower = body.name.lower()
-        tools = next((t for key, t in _KNOWN_TOOLS.items() if key in name_lower), [])
 
     server = await mcp_repo.create_server(
         db,
