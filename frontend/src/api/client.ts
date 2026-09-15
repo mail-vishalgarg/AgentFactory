@@ -1,5 +1,23 @@
 const BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:8000'
 
+const TOKEN_KEY = 'af_token'
+let authToken: string | null = localStorage.getItem(TOKEN_KEY)
+let onUnauthorized: (() => void) | null = null
+
+export function setAuthToken(token: string | null) {
+  authToken = token
+  if (token) localStorage.setItem(TOKEN_KEY, token)
+  else localStorage.removeItem(TOKEN_KEY)
+}
+
+export function getAuthToken(): string | null {
+  return authToken
+}
+
+export function registerUnauthorizedHandler(fn: (() => void) | null) {
+  onUnauthorized = fn
+}
+
 export interface MCPTool {
   id: string
   mcp_server_id: string
@@ -21,6 +39,7 @@ export interface MCPServer {
   last_checked_at: string | null
   created_at: string
   tools: MCPTool[]
+  connected: boolean
 }
 
 export interface AgentConfig {
@@ -90,12 +109,46 @@ export interface CreateAgentRequest {
   credentials: Record<string, string>
 }
 
+export interface AuthUser {
+  id: string
+  email: string
+  is_admin: boolean
+}
+
+export interface AuthResponse {
+  access_token: string
+  token_type: string
+  user: AuthUser
+}
+
+async function extractErrorMessage(res: Response): Promise<string> {
+  try {
+    const body = await res.json()
+    const detail = body?.detail
+    if (typeof detail === 'string') return detail
+    if (Array.isArray(detail) && detail.length > 0 && typeof detail[0]?.msg === 'string') {
+      return detail[0].msg
+    }
+  } catch {
+    // response body wasn't JSON — fall through to the generic message
+  }
+  return `${res.status} ${res.statusText}`
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
     ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      ...(init?.headers ?? {}),
+    },
   })
-  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+  if (!res.ok) {
+    const message = await extractErrorMessage(res)
+    if (res.status === 401) onUnauthorized?.()
+    throw new Error(message)
+  }
   if (res.status === 204) return undefined as T
   return res.json() as Promise<T>
 }
@@ -147,6 +200,11 @@ export const api = {
   revokeConnection: (server_name: string) =>
     req<void>(`/connections/${server_name}`, { method: 'DELETE' }),
   listRuns: (agentId: string) => req<AgentRun[]>(`/agents/${agentId}/runs`),
+  signup: (email: string, password: string) =>
+    req<AuthResponse>('/auth/signup', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  login: (email: string, password: string) =>
+    req<AuthResponse>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  me: () => req<AuthUser>('/auth/me'),
   downloadPostman: (agentId: string, token: string): Promise<Blob> =>
     fetch(`${BASE}/v1/agents/${agentId}/postman`, {
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },

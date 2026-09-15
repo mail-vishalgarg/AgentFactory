@@ -23,6 +23,11 @@ class MCPServer(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # Attribution/delete-permission only — the registry itself stays a
+    # shared catalog (is_shared), so this is never used to filter list reads.
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
+    )
 
     tools: Mapped[list["MCPTool"]] = relationship(
         "MCPTool", back_populates="server", cascade="all, delete-orphan"

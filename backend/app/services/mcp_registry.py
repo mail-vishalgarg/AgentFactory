@@ -45,8 +45,8 @@ async def discover_tools_from_mcp(endpoint: str, token: str) -> list[dict]:
             ]
 
 
-async def list_servers(db: AsyncSession) -> list[MCPServer]:
-    return await mcp_repo.list_all_servers(db)
+async def list_servers(db: AsyncSession, owner_id: uuid.UUID) -> list[MCPServer]:
+    return await mcp_repo.list_visible_servers(db, owner_id)
 
 
 async def get_server_tools(db: AsyncSession, server_id: uuid.UUID) -> list[MCPTool]:
@@ -61,8 +61,8 @@ _STOPWORDS = {"a", "an", "the", "and", "or", "to", "in", "on", "at", "of", "for"
               "all", "get", "fetch", "post", "send", "read", "use", "then", "if"}
 
 
-async def find_tools_for_prompt(db: AsyncSession, prompt: str) -> list[MCPServer]:
-    servers = await mcp_repo.list_all_servers(db)
+async def find_tools_for_prompt(db: AsyncSession, owner_id: uuid.UUID, prompt: str) -> list[MCPServer]:
+    servers = await mcp_repo.list_visible_servers(db, owner_id)
     prompt_lower = prompt.lower()
 
     # keywords from the prompt (skip stopwords)

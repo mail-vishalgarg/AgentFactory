@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
     frontend_origin: str = "http://localhost:5173"
+    jwt_secret: str = "change-me-to-a-random-secret"
+    jwt_expire_minutes: int = 60
 
     model_config = SettingsConfigDict(env_file="../.env", extra="ignore")
 

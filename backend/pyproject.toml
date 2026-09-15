@@ -20,6 +20,9 @@ dependencies = [
     "openai>=1.40.0",
     "mcp>=1.0.0",
     "langchain-mcp-adapters>=0.1.0",
+    "bcrypt>=4.2.0",
+    "pyjwt>=2.9.0",
+    "email-validator>=2.2.0",
 ]
 
 [project.optional-dependencies]

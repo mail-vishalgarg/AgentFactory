@@ -5,6 +5,8 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
+from app.deps import get_current_user
+from app.models.user import User
 from app.repositories import agent as agent_repo
 from app.repositories import connection as conn_repo
 from app.services.github_tools import verify_github_token, verify_slack_token
@@ -25,8 +27,10 @@ class ConnectionResponse(BaseModel):
 
 
 @router.get("", response_model=list[ConnectionResponse])
-async def list_connections(db: AsyncSession = Depends(get_db)) -> list[ConnectionResponse]:
-    connections = await conn_repo.list_connections(db)
+async def list_connections(
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)
+) -> list[ConnectionResponse]:
+    connections = await conn_repo.list_connections(db, user.id)
     return [
         ConnectionResponse(
             server_name=c.server_name,
@@ -40,7 +44,9 @@ async def list_connections(db: AsyncSession = Depends(get_db)) -> list[Connectio
 
 @router.post("", response_model=ConnectionResponse, status_code=201)
 async def add_connection(
-    body: ConnectionCreate, db: AsyncSession = Depends(get_db)
+    body: ConnectionCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> ConnectionResponse:
     if "github" in body.server_name.lower():
         ok, msg = verify_github_token(body.token)
@@ -52,9 +58,9 @@ async def add_connection(
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
 
-    conn = await conn_repo.upsert_connection(db, body.server_name, body.token)
+    conn = await conn_repo.upsert_connection(db, user.id, body.server_name, body.token)
 
-    agents = await agent_repo.list_agents(db)
+    agents = await agent_repo.list_agents(db, user.id)
     for agent in agents:
         creds = agent.credentials or {}
         has_server = any(
@@ -77,13 +83,15 @@ async def add_connection(
 
 @router.delete("/{server_name}", status_code=204)
 async def revoke_connection(
-    server_name: str, db: AsyncSession = Depends(get_db)
+    server_name: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> Response:
-    revoked = await conn_repo.revoke_connection(db, server_name)
+    revoked = await conn_repo.revoke_connection(db, user.id, server_name)
     if not revoked:
         raise HTTPException(status_code=404, detail="Connection not found")
 
-    agents = await agent_repo.list_agents(db)
+    agents = await agent_repo.list_agents(db, user.id)
     for agent in agents:
         creds = dict(agent.credentials or {})
         keys_to_remove = [

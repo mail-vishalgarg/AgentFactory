@@ -30,6 +30,7 @@ class MCPServerResponse(BaseModel):
     last_checked_at: datetime | None
     created_at: datetime
     tools: list[MCPToolResponse] = []
+    connected: bool = False
 
 
 class MCPServerCreate(BaseModel):

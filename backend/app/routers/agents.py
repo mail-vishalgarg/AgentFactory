@@ -6,6 +6,8 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
+from app.deps import get_current_user
+from app.models.user import User
 from app.repositories import agent as agent_repo
 from app.repositories import agent_run as run_repo
 from app.schemas.agent import (
@@ -23,23 +25,26 @@ router = APIRouter()
 
 @router.post("", response_model=AgentResponse, status_code=201)
 async def create_agent(
-    request: AgentCreate, db: AsyncSession = Depends(get_db)
+    request: AgentCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> AgentResponse:
     config = await build_agent_config(db, request)
     config_dict = config.model_dump(mode="json")
 
-    # Auto-populate credentials from existing agents for servers not provided
+    # Auto-populate credentials from this owner's existing agents for servers not provided
     credentials = dict(request.credentials or {})
     needed_servers = {t.mcp_server_name for t in config.tools}
     for server in needed_servers:
         already_have = any(server.lower() in k.lower() for k in credentials)
         if not already_have:
-            existing_token = await agent_repo.get_reusable_token_for_server(db, server)
+            existing_token = await agent_repo.get_reusable_token_for_server(db, user.id, server)
             if existing_token:
                 credentials[server] = existing_token
 
     agent = await agent_repo.save_agent(
         db,
+        owner_id=user.id,
         name=request.name,
         description=request.description,
         config_dict=config_dict,
@@ -57,8 +62,10 @@ async def create_agent(
 
 
 @router.get("", response_model=list[AgentResponse])
-async def list_agents(db: AsyncSession = Depends(get_db)) -> list[AgentResponse]:
-    agents = await agent_repo.list_agents(db)
+async def list_agents(
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)
+) -> list[AgentResponse]:
+    agents = await agent_repo.list_agents(db, user.id)
     return [
         AgentResponse(
             id=a.id,
@@ -75,11 +82,13 @@ async def list_agents(db: AsyncSession = Depends(get_db)) -> list[AgentResponse]
 
 @router.get("/credential-availability")
 async def get_credential_availability(
-    servers: str, db: AsyncSession = Depends(get_db)
+    servers: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> dict[str, dict]:
-    """Check which servers already have tokens stored in any existing agent."""
+    """Check which servers already have tokens stored in one of THIS owner's agents."""
     server_list = [s.strip() for s in servers.split(",") if s.strip()]
-    all_agents = await agent_repo.list_agents(db)
+    all_agents = await agent_repo.list_agents(db, user.id)
     result: dict[str, dict] = {}
     for server in server_list:
         found = any(
@@ -94,8 +103,12 @@ async def get_credential_availability(
 
 
 @router.get("/{agent_id}", response_model=AgentResponse)
-async def get_agent(agent_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> AgentResponse:
-    agent = await agent_repo.get_agent(db, agent_id)
+async def get_agent(
+    agent_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AgentResponse:
+    agent = await agent_repo.get_agent_for_owner(db, agent_id, user.id)
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     return AgentResponse(
@@ -110,17 +123,24 @@ async def get_agent(agent_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> 
 
 
 @router.delete("/{agent_id}", status_code=204)
-async def delete_agent(agent_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> None:
-    deleted = await agent_repo.delete_agent(db, agent_id)
+async def delete_agent(
+    agent_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> None:
+    deleted = await agent_repo.delete_agent(db, agent_id, user.id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Agent not found")
 
 
 @router.post("/{agent_id}/run", response_model=AgentRunResponse)
 async def run_agent(
-    agent_id: uuid.UUID, body: AgentRunRequest, db: AsyncSession = Depends(get_db)
+    agent_id: uuid.UUID,
+    body: AgentRunRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> AgentRunResponse:
-    agent = await agent_repo.get_agent(db, agent_id)
+    agent = await agent_repo.get_agent_for_owner(db, agent_id, user.id)
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
 
@@ -152,9 +172,11 @@ async def run_agent(
 
 @router.get("/{agent_id}/config")
 async def get_agent_config(
-    agent_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+    agent_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> dict:
-    agent = await agent_repo.get_agent(db, agent_id)
+    agent = await agent_repo.get_agent_for_owner(db, agent_id, user.id)
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     return agent.config
@@ -172,9 +194,11 @@ class VerifyTokenResponse(BaseModel):
 
 @router.get("/{agent_id}/credential-status")
 async def get_credential_status(
-    agent_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+    agent_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> dict[str, dict]:
-    agent = await agent_repo.get_agent(db, agent_id)
+    agent = await agent_repo.get_agent_for_owner(db, agent_id, user.id)
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
 
@@ -204,9 +228,12 @@ class UpdateCredentialRequest(BaseModel):
 
 @router.patch("/{agent_id}/credentials", response_model=VerifyTokenResponse)
 async def update_agent_credentials(
-    agent_id: uuid.UUID, body: UpdateCredentialRequest, db: AsyncSession = Depends(get_db)
+    agent_id: uuid.UUID,
+    body: UpdateCredentialRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> VerifyTokenResponse:
-    agent = await agent_repo.get_agent(db, agent_id)
+    agent = await agent_repo.get_agent_for_owner(db, agent_id, user.id)
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
 
@@ -225,9 +252,12 @@ async def update_agent_credentials(
 
 @router.delete("/{agent_id}/credentials/{server}", status_code=204)
 async def revoke_agent_credential(
-    agent_id: uuid.UUID, server: str, db: AsyncSession = Depends(get_db)
+    agent_id: uuid.UUID,
+    server: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> None:
-    agent = await agent_repo.get_agent(db, agent_id)
+    agent = await agent_repo.get_agent_for_owner(db, agent_id, user.id)
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     creds = dict(agent.credentials or {})
@@ -239,7 +269,9 @@ async def revoke_agent_credential(
 
 
 @router.post("/verify-token", response_model=VerifyTokenResponse)
-async def verify_token(body: VerifyTokenRequest) -> VerifyTokenResponse:
+async def verify_token(
+    body: VerifyTokenRequest, user: User = Depends(get_current_user)
+) -> VerifyTokenResponse:
     if "github" in body.server.lower():
         ok, msg = verify_github_token(body.token)
         return VerifyTokenResponse(ok=ok, message=msg)

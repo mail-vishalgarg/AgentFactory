@@ -10,12 +10,20 @@ from app.models.agent import Agent
 
 async def save_agent(
     db: AsyncSession,
+    owner_id: uuid.UUID,
     name: str,
     description: str,
     config_dict: dict[str, Any],
     credentials: dict[str, str] | None = None,
 ) -> Agent:
-    agent = Agent(name=name, description=description, config=config_dict, credentials=credentials or {}, api_token=str(uuid.uuid4()))
+    agent = Agent(
+        owner_id=owner_id,
+        name=name,
+        description=description,
+        config=config_dict,
+        credentials=credentials or {},
+        api_token=str(uuid.uuid4()),
+    )
     db.add(agent)
     await db.commit()
     await db.refresh(agent)
@@ -23,17 +31,28 @@ async def save_agent(
 
 
 async def get_agent(db: AsyncSession, agent_id: uuid.UUID) -> Agent | None:
+    """Unscoped lookup by primary key only — for the external invoke API,
+    which authenticates by api_token rather than a logged-in owner."""
     result = await db.execute(select(Agent).where(Agent.id == agent_id))
     return result.scalar_one_or_none()
 
 
-async def list_agents(db: AsyncSession) -> list[Agent]:
-    result = await db.execute(select(Agent).order_by(Agent.created_at.desc()))
+async def get_agent_for_owner(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID) -> Agent | None:
+    result = await db.execute(
+        select(Agent).where(Agent.id == agent_id, Agent.owner_id == owner_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def list_agents(db: AsyncSession, owner_id: uuid.UUID) -> list[Agent]:
+    result = await db.execute(
+        select(Agent).where(Agent.owner_id == owner_id).order_by(Agent.created_at.desc())
+    )
     return list(result.scalars().all())
 
 
-async def delete_agent(db: AsyncSession, agent_id: uuid.UUID) -> bool:
-    agent = await get_agent(db, agent_id)
+async def delete_agent(db: AsyncSession, agent_id: uuid.UUID, owner_id: uuid.UUID) -> bool:
+    agent = await get_agent_for_owner(db, agent_id, owner_id)
     if agent is None:
         return False
     await db.delete(agent)
@@ -70,9 +89,10 @@ async def touch_server_last_used(
     await db.commit()
 
 
-async def get_reusable_token_for_server(db: AsyncSession, server_name: str) -> str | None:
-    """Return the most recently updated token for a server from any existing agent."""
-    agents = await list_agents(db)
+async def get_reusable_token_for_server(db: AsyncSession, owner_id: uuid.UUID, server_name: str) -> str | None:
+    """Return the most recently updated token for a server from one of THIS
+    owner's existing agents only — never another owner's."""
+    agents = await list_agents(db, owner_id)
     for agent in agents:
         creds = agent.credentials or {}
         # Match if either name contains the other (handles "github" ↔ "github_project")

@@ -6,6 +6,10 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
+from app.deps import get_current_user
+from app.models.mcp import MCPServer
+from app.models.user import User
+from app.repositories import connection as conn_repo
 from app.repositories import mcp as mcp_repo
 from app.schemas.mcp import MCPServerCreate, MCPServerResponse
 from app.services import mcp_registry as svc
@@ -14,15 +18,38 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+async def _to_responses(
+    db: AsyncSession, user: User, servers: list[MCPServer]
+) -> list[MCPServerResponse]:
+    """Attach each server's `connected` flag for THIS viewer before validating —
+    never another user's connection status."""
+    connections = await conn_repo.list_connections(db, user.id)
+    connected_names = {c.server_name.lower() for c in connections if c.status == "active"}
+    responses = []
+    for s in servers:
+        response = MCPServerResponse.model_validate(s)
+        response.connected = s.name.lower() in connected_names
+        responses.append(response)
+    return responses
+
+
 @router.get("/servers", response_model=list[MCPServerResponse])
-async def list_servers(db: AsyncSession = Depends(get_db)) -> list[MCPServerResponse]:
-    servers = await svc.list_servers(db)
-    return [MCPServerResponse.model_validate(s) for s in servers]
+async def list_servers(
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)
+) -> list[MCPServerResponse]:
+    # Shared catalog by design (mcp_servers.is_shared) — a signed-in user sees
+    # every server marked "Everyone" plus their own private registrations,
+    # but the "connected" flag on each is always THEIR OWN, never another
+    # owner's credential.
+    servers = await svc.list_servers(db, user.id)
+    return await _to_responses(db, user, servers)
 
 
 @router.post("/servers", response_model=MCPServerResponse, status_code=201)
 async def register_server(
-    body: MCPServerCreate, db: AsyncSession = Depends(get_db)
+    body: MCPServerCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> MCPServerResponse:
     existing = await mcp_repo.get_server_by_name(db, body.name)
     if existing:
@@ -40,6 +67,7 @@ async def register_server(
 
     server = await mcp_repo.create_server(
         db,
+        owner_id=user.id,
         name=body.name,
         description=body.description,
         transport=body.transport,
@@ -54,7 +82,7 @@ async def register_server(
 
     await db.commit()
     refreshed = await mcp_repo.get_server_with_tools(db, server.id)
-    return MCPServerResponse.model_validate(refreshed)
+    return (await _to_responses(db, user, [refreshed]))[0]
 
 
 class SyncToolsRequest(BaseModel):
@@ -64,7 +92,10 @@ class SyncToolsRequest(BaseModel):
 
 @router.post("/servers/{server_id}/sync-tools", response_model=MCPServerResponse)
 async def sync_server_tools(
-    server_id: uuid.UUID, body: SyncToolsRequest, db: AsyncSession = Depends(get_db)
+    server_id: uuid.UUID,
+    body: SyncToolsRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> MCPServerResponse:
     """Re-discover tools from the live MCP endpoint and replace stored ones."""
     server = await mcp_repo.get_server_with_tools(db, server_id)
@@ -87,23 +118,31 @@ async def sync_server_tools(
 
     await db.commit()
     refreshed = await mcp_repo.get_server_with_tools(db, server_id)
-    return MCPServerResponse.model_validate(refreshed)
+    return (await _to_responses(db, user, [refreshed]))[0]
 
 
 @router.delete("/servers/{server_id}", status_code=204)
 async def delete_server(
-    server_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+    server_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> None:
     server = await mcp_repo.get_server_with_tools(db, server_id)
     if server is None:
         raise HTTPException(status_code=404, detail="Server not found")
+    # Shared catalog: anyone can read/use it, but only the registrant or an
+    # admin can remove it for everyone.
+    if server.owner_id != user.id and not user.is_admin:
+        raise HTTPException(status_code=403, detail="Only the server's registrant or an admin can remove it.")
     await db.delete(server)
     await db.commit()
 
 
 @router.get("/servers/{server_id}/tools")
 async def get_server_tools(
-    server_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+    server_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> list[dict]:
     tools = await svc.get_server_tools(db, server_id)
     return [
@@ -139,7 +178,9 @@ class ImportDiscoveryRequest(BaseModel):
 
 @router.post("/servers/import", response_model=MCPServerResponse, status_code=201)
 async def import_discovery(
-    body: ImportDiscoveryRequest, db: AsyncSession = Depends(get_db)
+    body: ImportDiscoveryRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> MCPServerResponse:
     """Import a server + tools from a discovery JSON (e.g. output of mcp_slack_test.py).
     If the server already exists, its tools are replaced."""
@@ -155,6 +196,7 @@ async def import_discovery(
             transport = "http"
         server = await mcp_repo.create_server(
             db,
+            owner_id=user.id,
             name=body.server.name,
             description=f"{body.server.name} MCP server",
             transport=transport,
@@ -176,11 +218,14 @@ async def import_discovery(
 
     await db.commit()
     refreshed = await mcp_repo.get_server_with_tools(db, server.id)
-    return MCPServerResponse.model_validate(refreshed)
-
+    return (await _to_responses(db, user, [refreshed]))[0]
 
 
 @router.get("/tools/suggest", response_model=list[MCPServerResponse])
-async def suggest_tools(prompt: str, db: AsyncSession = Depends(get_db)) -> list[MCPServerResponse]:
-    servers = await svc.find_tools_for_prompt(db, prompt)
-    return [MCPServerResponse.model_validate(s) for s in servers]
+async def suggest_tools(
+    prompt: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[MCPServerResponse]:
+    servers = await svc.find_tools_for_prompt(db, user.id, prompt)
+    return await _to_responses(db, user, servers)

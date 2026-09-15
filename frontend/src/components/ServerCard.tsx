@@ -62,12 +62,18 @@ export default function ServerCard({ server, onDelete, onUpdate }: Props) {
           <span className="text-xs text-gray-500">{server.status}</span>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            className="text-xs px-3 py-1 rounded border font-medium"
-            style={{ borderColor: '#2e9e7a', color: '#2e9e7a' }}
-          >
-            connected
-          </button>
+          {server.connected ? (
+            <span
+              className="text-xs px-3 py-1 rounded border font-medium"
+              style={{ borderColor: '#2e9e7a', color: '#2e9e7a' }}
+            >
+              connected
+            </span>
+          ) : (
+            <span className="text-xs px-3 py-1 rounded border font-medium border-gray-300 text-gray-400">
+              not connected
+            </span>
+          )}
           {onDelete && (
             <button
               onClick={() => {

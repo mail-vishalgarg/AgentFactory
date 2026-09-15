@@ -30,9 +30,9 @@ export default function MCPRegistry() {
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState('')
   const [toast, setToast] = useState('')
-  const [importJson, setImportJson] = useState('')
-  const [importError, setImportError] = useState('')
-  const [importing, setImporting] = useState(false)
+  //const [importJson, setImportJson] = useState('')
+  //const [importError, setImportError] = useState('')
+  //const [importing, setImporting] = useState(false)
 
   function loadServers() {
     setLoading(true)
@@ -79,7 +79,7 @@ export default function MCPRegistry() {
     }
   }
 
-  async function handleImport() {
+ /*  async function handleImport() {
     setImportError('')
     let parsed: { server: { name: string; endpoint: string; transport: string }; tools: { name: string; description: string; input_schema: Record<string, unknown> }[] }
     try {
@@ -104,7 +104,7 @@ export default function MCPRegistry() {
     } finally {
       setImporting(false)
     }
-  }
+  } */
 
   return (
     <div className="flex h-full">

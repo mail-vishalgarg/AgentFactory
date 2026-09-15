@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -33,9 +33,15 @@ async def get_tools_by_ids(db: AsyncSession, ids: list[uuid.UUID]) -> list[MCPTo
     return list(result.scalars().all())
 
 
-async def list_all_servers(db: AsyncSession) -> list[MCPServer]:
+async def list_visible_servers(db: AsyncSession, owner_id: uuid.UUID) -> list[MCPServer]:
+    """Servers marked is_shared=True (visible to everyone) plus this owner's
+    own private (is_shared=False) registrations — never another owner's
+    private ones."""
     result = await db.execute(
-        select(MCPServer).options(selectinload(MCPServer.tools)).order_by(MCPServer.name)
+        select(MCPServer)
+        .where(or_(MCPServer.is_shared.is_(True), MCPServer.owner_id == owner_id))
+        .options(selectinload(MCPServer.tools))
+        .order_by(MCPServer.name)
     )
     return list(result.scalars().all())
 

@@ -3,7 +3,7 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import agent_runs, agents, connections, invoke, mcp_registry
+from app.routers import agent_runs, agents, auth, connections, invoke, mcp_registry
 
 
 app = FastAPI(
@@ -20,6 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router, prefix="/auth", tags=["Auth"])
 app.include_router(mcp_registry.router, prefix="/mcp", tags=["MCP Registry"])
 app.include_router(agents.router, prefix="/agents", tags=["Agents"])
 app.include_router(agent_runs.router, prefix="/agents", tags=["Runs"])
