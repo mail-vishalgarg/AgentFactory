@@ -142,7 +142,7 @@ export default function AgentBuilder() {
         name,
         description: prompt,
         system_prompt: `You are a helpful assistant. ${prompt}`,
-        model_id: 'gpt-4o-mini',
+        model_id: 'gemini-2.0-flash',
         temperature: 0.0,
         tool_ids: toolIds,
         user_prompt: prompt,

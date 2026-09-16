@@ -5,7 +5,9 @@ from typing import Any
 
 import httpx2
 from fastapi import HTTPException
+from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import BaseTool
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_mcp_adapters.tools import load_mcp_tools
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
@@ -45,8 +47,8 @@ async def build_agent_config(db: AsyncSession, request: AgentCreate) -> AgentCon
         description=request.description,
         created_at=datetime.now(timezone.utc).isoformat(),
         model=ModelConfig(
-            provider="openai",
-            model_id=request.model_id,
+            provider="gemini" if ("gemini" in request.model_id.lower() or settings.active_gemini_api_key or not settings.openai_api_key) else "openai",
+            model_id=request.model_id if ("gemini" in request.model_id.lower() or settings.openai_api_key) else (settings.gemini_model or "gemini-2.0-flash"),
             temperature=request.temperature,
         ),
         system_prompt=request.system_prompt,
@@ -59,14 +61,47 @@ async def build_agent_config(db: AsyncSession, request: AgentCreate) -> AgentCon
     )
 
 
-def _build_llm(config: AgentConfigSchema) -> ChatOpenAI:
+def _build_llm(config: AgentConfigSchema) -> BaseChatModel:
+    provider = (config.model.provider or "").lower()
+    model_id = config.model.model_id
+
+    use_gemini = (
+        provider == "gemini"
+        or "gemini" in model_id.lower()
+        or (settings.active_gemini_api_key and not settings.openai_api_key)
+    )
+
+    if use_gemini:
+        api_key = settings.active_gemini_api_key
+        if not api_key:
+            raise HTTPException(
+                status_code=400,
+                detail="GEMINI_API_KEY is not configured. Set GEMINI_API_KEY in your .env file.",
+            )
+        target_model = model_id if "gemini" in model_id.lower() else (settings.gemini_model or "gemini-2.0-flash")
+        return ChatGoogleGenerativeAI(
+            model=target_model,
+            temperature=config.model.temperature,
+            max_output_tokens=config.model.max_tokens,
+            api_key=api_key,
+        )
+
     if not settings.openai_api_key:
+        if settings.active_gemini_api_key:
+            target_model = settings.gemini_model or "gemini-2.0-flash"
+            return ChatGoogleGenerativeAI(
+                model=target_model,
+                temperature=config.model.temperature,
+                max_output_tokens=config.model.max_tokens,
+                api_key=settings.active_gemini_api_key,
+            )
         raise HTTPException(
             status_code=400,
-            detail="OPENAI_API_KEY is not configured. Set it in your .env file.",
+            detail="Neither GEMINI_API_KEY nor OPENAI_API_KEY is configured. Set GEMINI_API_KEY in your .env file.",
         )
+
     return ChatOpenAI(
-        model=config.model.model_id,
+        model=model_id,
         temperature=config.model.temperature,
         max_tokens=config.model.max_tokens,
         api_key=settings.openai_api_key,
@@ -102,7 +137,7 @@ async def execute_agent(
 
 async def _run_with_mcp(
     config: AgentConfigSchema,
-    llm: ChatOpenAI,
+    llm: BaseChatModel,
     credentials: dict[str, str],
     message: str,
     use_github_mcp: bool,

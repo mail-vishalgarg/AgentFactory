@@ -9,7 +9,7 @@ A platform for registering MCP (Model Context Protocol) servers, discovering the
 | Backend | Python 3.12, FastAPI, uv, LangGraph, LangChain |
 | Frontend | React 18, Vite, TypeScript, TailwindCSS |
 | Database | PostgreSQL (via Supabase) |
-| Agent orchestration | LangGraph + LangChain + OpenAI |
+| Agent orchestration | LangGraph + LangChain + Gemini / OpenAI |
 
 ## Folder Layout
 

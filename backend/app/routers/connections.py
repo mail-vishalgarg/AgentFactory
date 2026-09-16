@@ -22,7 +22,7 @@ class ConnectionCreate(BaseModel):
 class ConnectionResponse(BaseModel):
     server_name: str
     status: str
-    created_at: datetime
+    created_at: datetime | None = None
     last_used_at: datetime | None = None
 
 
@@ -43,40 +43,42 @@ async def list_connections(
 
 
 @router.post("", response_model=ConnectionResponse, status_code=201)
+@router.post("/", response_model=ConnectionResponse, status_code=201)
 async def add_connection(
     body: ConnectionCreate,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ConnectionResponse:
-    if "github" in body.server_name.lower():
-        ok, msg = verify_github_token(body.token)
-    elif "slack" in body.server_name.lower():
-        ok, msg = verify_slack_token(body.token)
-    else:
-        ok, msg = True, "Token accepted"
+    trimmed_token = body.token.strip()
+    if not trimmed_token:
+        raise HTTPException(status_code=400, detail="Token cannot be empty")
 
-    if not ok:
-        raise HTTPException(status_code=400, detail=msg)
+    norm_server = body.server_name.strip().lower()
 
-    conn = await conn_repo.upsert_connection(db, user.id, body.server_name, body.token)
+    try:
+        conn = await conn_repo.upsert_connection(db, user.id, norm_server, trimmed_token)
+        await db.commit()
+    except Exception as exc:
+        await db.rollback()
+        raise HTTPException(status_code=500, detail=f"Database save error: {exc}")
 
-    agents = await agent_repo.list_agents(db, user.id)
-    for agent in agents:
-        creds = agent.credentials or {}
-        has_server = any(
-            body.server_name.lower() in k.lower() or k.lower() in body.server_name.lower()
-            for k in creds
-        )
-        if has_server:
-            await agent_repo.update_credentials(db, agent.id, body.server_name, body.token)
-
-    await db.commit()
-    await db.refresh(conn)
+    try:
+        agents = await agent_repo.list_agents(db, user.id)
+        for agent in agents:
+            creds = agent.credentials or {}
+            has_server = any(
+                norm_server in k.lower() or k.lower() in norm_server
+                for k in creds
+            )
+            if has_server:
+                await agent_repo.update_credentials(db, agent.id, norm_server, trimmed_token)
+    except Exception:
+        pass
 
     return ConnectionResponse(
         server_name=conn.server_name,
         status=conn.status,
-        created_at=conn.created_at,
+        created_at=conn.created_at or datetime.utcnow(),
         last_used_at=conn.last_used_at,
     )
 
