@@ -61,6 +61,9 @@ class AgentResponse(BaseModel):
     config: AgentConfigSchema
     created_at: datetime
     api_token: str = ""
+    run_count: int = 0
+    last_run_status: str | None = None
+    last_run_at: datetime | None = None
 
 
 class AgentRunRequest(BaseModel):

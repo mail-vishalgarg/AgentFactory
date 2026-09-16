@@ -66,18 +66,25 @@ async def list_agents(
     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)
 ) -> list[AgentResponse]:
     agents = await agent_repo.list_agents(db, user.id)
-    return [
-        AgentResponse(
-            id=a.id,
-            name=a.name,
-            description=a.description,
-            status=a.status,
-            config=AgentConfigSchema.model_validate(a.config),
-            created_at=a.created_at,
-            api_token=a.api_token,
+    summaries = await run_repo.get_run_summaries_for_owner(db, user.id)
+    responses = []
+    for a in agents:
+        summary = summaries.get(a.id)
+        responses.append(
+            AgentResponse(
+                id=a.id,
+                name=a.name,
+                description=a.description,
+                status=a.status,
+                config=AgentConfigSchema.model_validate(a.config),
+                created_at=a.created_at,
+                api_token=a.api_token,
+                run_count=summary.run_count if summary else 0,
+                last_run_status=summary.last_status if summary else None,
+                last_run_at=summary.last_ran_at if summary else None,
+            )
         )
-        for a in agents
-    ]
+    return responses
 
 
 @router.get("/credential-availability")
@@ -111,6 +118,7 @@ async def get_agent(
     agent = await agent_repo.get_agent_for_owner(db, agent_id, user.id)
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
+    summary = await run_repo.get_run_summary(db, agent_id)
     return AgentResponse(
         id=agent.id,
         name=agent.name,
@@ -119,6 +127,9 @@ async def get_agent(
         config=AgentConfigSchema.model_validate(agent.config),
         created_at=agent.created_at,
         api_token=agent.api_token,
+        run_count=summary.run_count,
+        last_run_status=summary.last_status,
+        last_run_at=summary.last_ran_at,
     )
 
 

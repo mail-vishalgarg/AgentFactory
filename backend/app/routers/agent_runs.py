@@ -24,6 +24,11 @@ class RunResponse(BaseModel):
     ran_at: datetime
 
 
+class RunWithAgentResponse(RunResponse):
+    agent_id: str
+    agent_name: str
+
+
 @router.get("/{agent_id}/runs", response_model=list[RunResponse])
 async def list_agent_runs(
     agent_id: uuid.UUID,
@@ -45,4 +50,28 @@ async def list_agent_runs(
             ran_at=r.ran_at,
         )
         for r in runs
+    ]
+
+
+@router.get("/runs", response_model=list[RunWithAgentResponse])
+async def list_all_runs(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[RunWithAgentResponse]:
+    """All runs across every agent this user owns, newest first — backs the
+    'Runs' tab on the My Agents page."""
+    rows = await run_repo.list_runs_for_owner(db, user.id)
+    return [
+        RunWithAgentResponse(
+            id=str(r.id),
+            trigger=r.trigger,
+            status=r.status,
+            latency_ms=r.latency_ms,
+            cost_usd=float(r.cost_usd),
+            result=r.result,
+            ran_at=r.ran_at,
+            agent_id=str(r.agent_id),
+            agent_name=agent_name,
+        )
+        for r, agent_name in rows
     ]

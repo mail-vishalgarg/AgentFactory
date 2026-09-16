@@ -69,6 +69,9 @@ export interface Agent {
   config: AgentConfig
   created_at: string
   api_token: string
+  run_count: number
+  last_run_status: string | null
+  last_run_at: string | null
 }
 
 export interface Connection {
@@ -86,6 +89,11 @@ export interface AgentRun {
   cost_usd: number
   result: string
   ran_at: string
+}
+
+export interface AgentRunWithAgent extends AgentRun {
+  agent_id: string
+  agent_name: string
 }
 
 export interface RegisterServerRequest {
@@ -200,6 +208,7 @@ export const api = {
   revokeConnection: (server_name: string) =>
     req<void>(`/connections/${server_name}`, { method: 'DELETE' }),
   listRuns: (agentId: string) => req<AgentRun[]>(`/agents/${agentId}/runs`),
+  listAllRuns: () => req<AgentRunWithAgent[]>('/agents/runs'),
   signup: (email: string, password: string) =>
     req<AuthResponse>('/auth/signup', { method: 'POST', body: JSON.stringify({ email, password }) }),
   login: (email: string, password: string) =>
