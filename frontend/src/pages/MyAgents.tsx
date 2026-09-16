@@ -16,7 +16,16 @@ function timeAgo(iso: string): string {
   return `${Math.floor(diff / 86400)}d ago`
 }
 
-type Tab = 'agents' | 'runs'
+type Tab = 'agents' | 'runs' | 'api'
+
+const API_BASE = (import.meta as unknown as { env: Record<string, string> }).env?.VITE_API_URL ?? 'http://localhost:8000'
+
+function curlFor(agent: Agent): string {
+  return `curl -X POST ${API_BASE}/v1/agents/${agent.id}/invoke \\
+  -H "Authorization: Bearer $AGENT_FACTORY" \\
+  -H "Content-Type: application/json" \\
+  -d '{"input": "Your message here"}'`
+}
 
 export default function MyAgents() {
   const navigate = useNavigate()
@@ -45,6 +54,20 @@ export default function MyAgents() {
     load()
   }
 
+  function copyText(text: string) {
+    navigator.clipboard.writeText(text)
+  }
+
+  async function handleDownloadPostman(agent: Agent) {
+    const blob = await api.downloadPostman(agent.id, agent.api_token)
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${agent.name}_collection.json`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-6">
@@ -59,7 +82,7 @@ export default function MyAgents() {
       </div>
 
       <div className="flex gap-1 border-b border-gray-200 mb-6">
-        {(['agents', 'runs'] as const).map((t) => (
+        {(['agents', 'runs', 'api'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -69,7 +92,7 @@ export default function MyAgents() {
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            {t === 'agents' ? 'Agents' : 'Runs'}
+            {t === 'agents' ? 'Agents' : t === 'runs' ? 'Runs' : 'API'}
           </button>
         ))}
       </div>
@@ -140,6 +163,63 @@ export default function MyAgents() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'api' && (
+        <div>
+          {loading && <p className="text-sm text-gray-400">Loading…</p>}
+
+          {!loading && agents.length === 0 && (
+            <div className="text-center py-20 text-gray-400">
+              <p className="text-lg">No agents yet.</p>
+            </div>
+          )}
+
+          {!loading && agents.length > 0 && (
+            <div className="border border-gray-200 rounded-lg overflow-hidden bg-white divide-y divide-gray-100">
+              {agents.map((agent) => (
+                <div key={agent.id} className="px-4 py-4 flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-gray-900">{agent.name}</span>
+                    <button
+                      onClick={() => handleDownloadPostman(agent)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white rounded-md bg-gray-900 hover:bg-gray-700"
+                    >
+                      ↓ Download Postman collection
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 bg-gray-50 border border-gray-100 rounded-md px-3 py-2">
+                    <span className="font-mono text-xs text-gray-700 truncate">
+                      POST /v1/agents/{agent.id}/invoke
+                    </span>
+                    <button
+                      onClick={() => copyText(curlFor(agent))}
+                      className="shrink-0 px-2 py-1 text-xs font-medium border border-gray-300 rounded text-gray-600 hover:bg-white"
+                    >
+                      Copy curl
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="password"
+                      readOnly
+                      value={agent.api_token}
+                      className="flex-1 font-mono text-xs text-gray-700 bg-transparent border border-gray-200 rounded-md px-3 py-2 outline-none"
+                    />
+                    <button
+                      onClick={() => copyText(agent.api_token)}
+                      className="shrink-0 px-2 py-1 text-xs font-medium border border-gray-300 rounded text-gray-600 hover:bg-gray-50"
+                    >
+                      Copy token
+                    </button>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
