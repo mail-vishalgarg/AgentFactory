@@ -56,6 +56,8 @@ export default function AgentBuilder() {
     setStage(1)
     setError('')
     try {
+      // Backend returns ALL visible servers (matched ones come first).
+      // All are pre-checked; user deselects what they don't need.
       const servers = await api.suggestTools(prompt)
       setSuggestedServers(servers)
       setCheckedServers(new Set(servers.map((s) => s.id)))
@@ -73,23 +75,31 @@ export default function AgentBuilder() {
       return
     }
 
-    // Check which servers already have tokens stored elsewhere
-    try {
-      const serverNames = needsCreds.map((s) => s.name)
-      const availability = await api.getCredentialAvailability(serverNames)
-      const alreadyConnected = new Set(
-        serverNames.filter((name) => availability[name]?.available)
-      )
-      setPreConnected(alreadyConnected)
+    // Use the `connected` flag from the server response (set by backend
+    // from the connections table) to determine which already have PATs.
+    const alreadyConnected = new Set(
+      needsCreds.filter((s) => s.connected).map((s) => s.name)
+    )
 
-      // If ALL servers already have tokens, skip straight to build
-      if (alreadyConnected.size === needsCreds.length) {
-        setStage(3)
-      } else {
-        setStage(2)
+    // Also check credential-availability as a fallback (tokens stored in agents)
+    try {
+      const uncheckedNames = needsCreds.filter((s) => !s.connected).map((s) => s.name)
+      if (uncheckedNames.length > 0) {
+        const availability = await api.getCredentialAvailability(uncheckedNames)
+        for (const name of uncheckedNames) {
+          if (availability[name]?.available) alreadyConnected.add(name)
+        }
       }
     } catch {
-      // If availability check fails, fall through to credential step
+      // ignore — we already have the `connected` field as primary source
+    }
+
+    setPreConnected(alreadyConnected)
+
+    // If ALL servers already have tokens, skip straight to build
+    if (alreadyConnected.size === needsCreds.length) {
+      setStage(3)
+    } else {
       setStage(2)
     }
   }
@@ -134,8 +144,17 @@ export default function AgentBuilder() {
   useEffect(() => {
     if (stage !== 3) return
     const selected = suggestedServers.filter((s) => checkedServers.has(s.id))
-    const toolIds = selected.flatMap((s) => s.tools.map((t) => t.id))
+    const toolIds = selected.flatMap((s) => s.tools?.map((t) => t.id) ?? [])
     const name = agentName.trim() || deriveAgentName(selected)
+
+    // Merge explicit credentials with pre-connected server names so the
+    // backend can resolve tokens from the connections table.
+    const allCredentials = { ...credentials }
+    for (const s of selected) {
+      if (s.connected && !allCredentials[s.name]) {
+        allCredentials[s.name] = '__CONNECTION__'  // signal: use stored connection token
+      }
+    }
 
     api
       .createAgent({
@@ -146,13 +165,17 @@ export default function AgentBuilder() {
         temperature: 0.0,
         tool_ids: toolIds,
         user_prompt: prompt,
-        credentials,
+        credentials: allCredentials,
       })
       .then((agent) => {
         setBuiltAgent(agent)
         setStage(4)
       })
-      .catch(() => setError('Failed to build agent.'))
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : 'Failed to build agent.'
+        setError(msg)
+        setStage(2)
+      })
   }, [stage])
 
   const completedSteps = stage === 0 ? 0 : stage === 1 ? 1 : stage === 2 ? 2 : stage === 3 ? 3 : 4

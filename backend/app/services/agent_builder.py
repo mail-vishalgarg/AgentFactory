@@ -25,14 +25,55 @@ SLACK_MCP_URL = "https://mcp.slack.com/mcp"
 
 
 async def build_agent_config(db: AsyncSession, request: AgentCreate) -> AgentConfigSchema:
-    tools = await mcp_repo.get_tools_by_ids(db, request.tool_ids)
+    tools = await mcp_repo.get_tools_by_ids(db, request.tool_ids) if request.tool_ids else []
+
+    # Fallback 1: resolve tools from the servers referenced in credentials
+    if not tools and request.credentials:
+        for server_name in request.credentials:
+            server = await mcp_repo.get_server_by_name(db, server_name)
+            if server:
+                server_with_tools = await mcp_repo.get_server_with_tools(db, server.id)
+                if server_with_tools and server_with_tools.tools:
+                    for t in server_with_tools.tools:
+                        t.server = server_with_tools
+                        tools.append(t)
+
+    # Fallback 2: auto-populate from the local registry catalog
+    if not tools and request.credentials:
+        try:
+            from app.services.mcp_registry import get_external_catalog
+            catalog = get_external_catalog(set())
+            for s_name in request.credentials:
+                target = next((c for c in catalog if c["name"].lower() == s_name.lower()), None)
+                if target and target.get("tools"):
+                    db_server = await mcp_repo.get_server_by_name(db, target["name"])
+                    if db_server:
+                        for ct in target["tools"]:
+                            t = await mcp_repo.create_tool(
+                                db,
+                                mcp_server_id=db_server.id,
+                                name=ct["name"],
+                                description=ct["description"],
+                                permission_level=ct["permission_level"],
+                                input_schema=ct["input_schema"],
+                            )
+                            t.server = db_server
+                            tools.append(t)
+                        await db.commit()
+        except Exception:
+            pass
+
     if not tools:
-        raise HTTPException(status_code=400, detail="No valid tools found for the given IDs")
+        raise HTTPException(
+            status_code=400,
+            detail="No valid tools found for the given IDs or servers. "
+                   "Please register MCP servers with tools first.",
+        )
 
     tool_configs = [
         ToolConfig(
             mcp_server_id=str(t.mcp_server_id),
-            mcp_server_name=t.server.name,
+            mcp_server_name=t.server.name if t.server else "unknown",
             tool_name=t.name,
             tool_description=t.description,
             input_schema=t.input_schema,

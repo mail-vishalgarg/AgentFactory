@@ -32,15 +32,30 @@ async def create_agent(
     config = await build_agent_config(db, request)
     config_dict = config.model_dump(mode="json")
 
-    # Auto-populate credentials from this owner's existing agents for servers not provided
+    # Build final credentials dict
     credentials = dict(request.credentials or {})
     needed_servers = {t.mcp_server_name for t in config.tools}
+
+    # Resolve __CONNECTION__ placeholders and missing credentials from connections table
+    from app.repositories import connection as conn_repo
+    connections = await conn_repo.list_connections(db, user.id)
+    conn_tokens = {c.server_name.lower(): c.token for c in connections if c.status == "active"}
+
     for server in needed_servers:
-        already_have = any(server.lower() in k.lower() for k in credentials)
-        if not already_have:
-            existing_token = await agent_repo.get_reusable_token_for_server(db, user.id, server)
-            if existing_token:
-                credentials[server] = existing_token
+        key = server.lower()
+        current = credentials.get(server, "")
+        # Replace placeholder or empty with stored connection token
+        if not current or current == "__CONNECTION__":
+            if key in conn_tokens:
+                credentials[server] = conn_tokens[key]
+            else:
+                # Try from existing agents
+                existing_token = await agent_repo.get_reusable_token_for_server(db, user.id, server)
+                if existing_token:
+                    credentials[server] = existing_token
+
+    # Remove any remaining __CONNECTION__ placeholders
+    credentials = {k: v for k, v in credentials.items() if v != "__CONNECTION__"}
 
     agent = await agent_repo.save_agent(
         db,

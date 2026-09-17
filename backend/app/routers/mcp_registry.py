@@ -271,5 +271,13 @@ async def suggest_tools(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[MCPServerResponse]:
-    servers = await svc.find_tools_for_prompt(db, user.id, prompt)
-    return await _to_responses(db, user, servers)
+    """Return ALL visible servers. Matched servers come first so the frontend
+    can pre-check them; the user deselects whatever they don't need."""
+    matched = await svc.find_tools_for_prompt(db, user.id, prompt)
+    all_servers = await svc.list_servers(db, user.id)
+
+    matched_ids = {s.id for s in matched}
+    # matched first, then the rest (not duplicated)
+    ordered = list(matched) + [s for s in all_servers if s.id not in matched_ids]
+
+    return await _to_responses(db, user, ordered)
