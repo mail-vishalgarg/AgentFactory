@@ -67,6 +67,25 @@ export interface MCPServer {
   connected: boolean
 }
 
+export interface EvaluationDimension {
+  name: string
+  score: number
+  max_score: number
+  status: string
+  details: string
+}
+
+export interface AgentEvaluation {
+  agent_id: string
+  overall_score: number
+  safety_grade: string
+  benchmark_status: string
+  evaluated_at: string
+  latency_ms: number
+  dimensions: EvaluationDimension[]
+  diagnostic_output: string
+}
+
 export interface AgentConfig {
   version: string
   agent_id: string
@@ -83,14 +102,14 @@ export interface AgentConfig {
     permission_level: string
   }[]
   graph: { type: string; checkpointer: boolean }
-  metadata: { user_prompt: string; builder_version: string }
+  metadata: { user_prompt?: string; builder_version?: string; evaluation?: AgentEvaluation }
 }
 
 export interface Agent {
   id: string
   name: string
   description: string
-  status: 'draft' | 'live' | 'archived'
+  status: 'draft' | 'live' | 'archived' | 'active' | 'tested'
   config: AgentConfig
   created_at: string
   api_token: string
@@ -221,6 +240,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ message }),
     }),
+  evaluateAgent: (agentId: string) =>
+    req<AgentEvaluation>(`/agents/${agentId}/evaluate`, { method: 'POST' }),
   verifyToken: (server: string, token: string) =>
     req<{ ok: boolean; message: string }>('/agents/verify-token', {
       method: 'POST',
