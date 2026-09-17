@@ -113,6 +113,9 @@ export interface Agent {
   config: AgentConfig
   created_at: string
   api_token: string
+  run_count: number
+  last_run_status: string | null
+  last_run_at: string | null
 }
 
 export interface Connection {
@@ -132,6 +135,42 @@ export interface AgentRun {
   cost_usd: number
   result: string
   ran_at: string
+}
+
+export interface AgentRunWithAgent extends AgentRun {
+  agent_id: string
+  agent_name: string
+}
+
+export interface MarketplaceTool {
+  mcp_server_name: string
+  tool_name: string
+  tool_description: string
+  permission_level: string
+  requires_approval: boolean
+}
+
+export interface MarketplaceListing {
+  id: string
+  name: string
+  description: string
+  tools: MarketplaceTool[]
+  score: number
+  governance_grade: string
+  publisher_org: string
+  install_count: number
+  submitted_at: string
+}
+
+export interface AgentScore {
+  score: number
+  score_ok: boolean
+  governance_grade: string
+  governance_ok: boolean
+  write_tools_gated: boolean
+  can_publish: boolean
+  blocked_reason: string | null
+  publish_status: string | null
 }
 
 export interface RegisterServerRequest {
@@ -273,6 +312,14 @@ export const api = {
   revokeConnection: (server_name: string) =>
     req<void>(`/connections/${server_name}`, { method: 'DELETE' }),
   listRuns: (agentId: string) => req<AgentRun[]>(`/agents/${agentId}/runs`),
+  listAllRuns: () => req<AgentRunWithAgent[]>('/agents/runs'),
+  getAgentScore: (agentId: string) => req<AgentScore>(`/agents/${agentId}/score`),
+  publishAgent: (agentId: string) =>
+    req<{ listing_id: string; status: string }>(`/agents/${agentId}/publish`, { method: 'POST' }),
+  listMarketplace: () => req<MarketplaceListing[]>('/marketplace'),
+  getMarketplaceListing: (listingId: string) => req<MarketplaceListing>(`/marketplace/${listingId}`),
+  installListing: (listingId: string) =>
+    req<Agent>(`/marketplace/${listingId}/install`, { method: 'POST' }),
   signup: (email: string, password: string) =>
     req<AuthResponse>('/auth/signup', { method: 'POST', body: JSON.stringify({ email, password }) }),
   login: (email: string, password: string) =>

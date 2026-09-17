@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -11,7 +12,7 @@ class MCPToolResponse(BaseModel):
     mcp_server_id: uuid.UUID
     name: str
     description: str
-    input_schema: dict
+    input_schema: dict[str, Any]
     permission_level: str
     created_at: datetime
 

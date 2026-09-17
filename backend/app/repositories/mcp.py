@@ -52,6 +52,24 @@ async def delete_server_tools(db: AsyncSession, server_id: uuid.UUID) -> None:
     await db.flush()
 
 
+async def get_visible_tool_by_name(
+    db: AsyncSession, server_name: str, tool_name: str, owner_id: uuid.UUID
+) -> MCPTool | None:
+    """A tool by (server name, tool name), scoped to servers this owner can
+    actually see -- shared servers, or their own private registrations."""
+    result = await db.execute(
+        select(MCPTool)
+        .join(MCPServer, MCPServer.id == MCPTool.mcp_server_id)
+        .where(
+            MCPServer.name == server_name,
+            MCPTool.name == tool_name,
+            or_(MCPServer.is_shared.is_(True), MCPServer.owner_id == owner_id),
+        )
+        .options(selectinload(MCPTool.server))
+    )
+    return result.scalar_one_or_none()
+
+
 async def get_server_with_tools(db: AsyncSession, server_id: uuid.UUID) -> MCPServer | None:
     result = await db.execute(
         select(MCPServer)

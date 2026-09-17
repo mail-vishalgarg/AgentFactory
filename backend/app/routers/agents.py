@@ -12,15 +12,19 @@ from app.deps import get_current_user
 from app.models.user import User
 from app.repositories import agent as agent_repo
 from app.repositories import agent_run as run_repo
+from app.repositories import marketplace as marketplace_repo
 from app.schemas.agent import (
     AgentConfigSchema,
     AgentCreate,
     AgentResponse,
     AgentRunRequest,
     AgentRunResponse,
+    AgentScoreResponse,
+    PublishResponse,
 )
 from app.services.agent_builder import build_agent_config, execute_agent
 from app.services.github_tools import verify_pat_token
+from app.services.scoring import evaluate_publish_gate
 
 router = APIRouter()
 
@@ -83,18 +87,25 @@ async def list_agents(
     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)
 ) -> list[AgentResponse]:
     agents = await agent_repo.list_agents(db, user.id)
-    return [
-        AgentResponse(
-            id=a.id,
-            name=a.name,
-            description=a.description,
-            status=a.status,
-            config=AgentConfigSchema.model_validate(a.config),
-            created_at=a.created_at,
-            api_token=a.api_token,
+    summaries = await run_repo.get_run_summaries_for_owner(db, user.id)
+    responses = []
+    for a in agents:
+        summary = summaries.get(a.id)
+        responses.append(
+            AgentResponse(
+                id=a.id,
+                name=a.name,
+                description=a.description,
+                status=a.status,
+                config=AgentConfigSchema.model_validate(a.config),
+                created_at=a.created_at,
+                api_token=a.api_token,
+                run_count=summary.run_count if summary else 0,
+                last_run_status=summary.last_status if summary else None,
+                last_run_at=summary.last_ran_at if summary else None,
+            )
         )
-        for a in agents
-    ]
+    return responses
 
 
 @router.get("/credential-availability")
@@ -128,6 +139,7 @@ async def get_agent(
     agent = await agent_repo.get_agent_for_owner(db, agent_id, user.id)
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
+    summary = await run_repo.get_run_summary(db, agent_id)
     return AgentResponse(
         id=agent.id,
         name=agent.name,
@@ -136,6 +148,9 @@ async def get_agent(
         config=AgentConfigSchema.model_validate(agent.config),
         created_at=agent.created_at,
         api_token=agent.api_token,
+        run_count=summary.run_count,
+        last_run_status=summary.last_status,
+        last_run_at=summary.last_ran_at,
     )
 
 
@@ -148,6 +163,79 @@ async def delete_agent(
     deleted = await agent_repo.delete_agent(db, agent_id, user.id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Agent not found")
+
+
+@router.get("/{agent_id}/score", response_model=AgentScoreResponse)
+async def get_agent_score(
+    agent_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AgentScoreResponse:
+    agent = await agent_repo.get_agent_for_owner(db, agent_id, user.id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    config = AgentConfigSchema.model_validate(agent.config)
+    run_count, ok_count = await run_repo.get_run_stats(db, agent_id)
+    gate = evaluate_publish_gate(config, run_count, ok_count)
+    listing = await marketplace_repo.get_latest_listing_for_agent(db, agent_id)
+
+    return AgentScoreResponse(
+        score=gate.score,
+        score_ok=gate.score_ok,
+        governance_grade=gate.governance,
+        governance_ok=gate.governance_ok,
+        write_tools_gated=gate.write_tools_gated,
+        can_publish=gate.can_publish,
+        blocked_reason=gate.blocked_reason,
+        publish_status=listing.status if listing else None,
+    )
+
+
+@router.post("/{agent_id}/publish", response_model=PublishResponse)
+async def publish_agent(
+    agent_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> PublishResponse:
+    agent = await agent_repo.get_agent_for_owner(db, agent_id, user.id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    config = AgentConfigSchema.model_validate(agent.config)
+    run_count, ok_count = await run_repo.get_run_stats(db, agent_id)
+    gate = evaluate_publish_gate(config, run_count, ok_count)
+    if not gate.can_publish:
+        raise HTTPException(status_code=400, detail=gate.blocked_reason)
+
+    # Sanitized design only: no credentials, no internal mcp_server_id, no
+    # publisher identity beyond an org label derived from their email domain.
+    sanitized_tools = [
+        {
+            "mcp_server_name": t.mcp_server_name,
+            "tool_name": t.tool_name,
+            "tool_description": t.tool_description,
+            "permission_level": t.permission_level,
+            "requires_approval": t.requires_approval,
+        }
+        for t in config.tools
+    ]
+    publisher_org = user.email.split("@")[-1] if "@" in user.email else "unknown"
+    listing = await marketplace_repo.create_listing(
+        db,
+        agent_id=agent_id,
+        publisher_owner_id=user.id,
+        publisher_org=publisher_org,
+        name=agent.name,
+        description=agent.description,
+        system_prompt=config.system_prompt,
+        model_id=config.model.model_id,
+        temperature=config.model.temperature,
+        tools=sanitized_tools,
+        score=gate.score,
+        governance_grade=gate.governance,
+    )
+    return PublishResponse(listing_id=str(listing.id), status=listing.status)
 
 
 @router.post("/{agent_id}/run", response_model=AgentRunResponse)
