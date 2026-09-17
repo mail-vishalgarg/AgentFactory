@@ -35,6 +35,7 @@ async def build_agent_config(db: AsyncSession, request: AgentCreate) -> AgentCon
             tool_description=t.description,
             input_schema=t.input_schema,
             permission_level=t.permission_level,
+            requires_approval=t.permission_level in ("write", "destructive"),
         )
         for t in tools
     ]

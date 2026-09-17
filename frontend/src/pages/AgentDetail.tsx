@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
-import { api, type Agent, type AgentConfig, type AgentRun } from '../api/client'
+import { api, type Agent, type AgentConfig, type AgentRun, type AgentScore } from '../api/client'
 
-type Tab = 'overview' | 'playground' | 'connections' | 'runs' | 'api'
+type Tab = 'overview' | 'playground' | 'connections' | 'runs' | 'api' | 'settings'
 
 interface CredStatus {
   ok: boolean
@@ -256,6 +256,109 @@ function ApiTab({ agent }: { agent: Agent }) {
   )
 }
 
+function SettingsTab({ agent }: { agent: Agent }) {
+  const [scoreData, setScoreData] = useState<AgentScore | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [publishing, setPublishing] = useState(false)
+  const [publishError, setPublishError] = useState('')
+
+  useEffect(() => {
+    setLoading(true)
+    api.getAgentScore(agent.id).then(setScoreData).finally(() => setLoading(false))
+  }, [agent.id])
+
+  async function handlePublish() {
+    setPublishing(true)
+    setPublishError('')
+    try {
+      await api.publishAgent(agent.id)
+      const updated = await api.getAgentScore(agent.id)
+      setScoreData(updated)
+    } catch (e) {
+      setPublishError(e instanceof Error ? e.message : 'Publish failed')
+    } finally {
+      setPublishing(false)
+    }
+  }
+
+  if (loading || !scoreData) {
+    return (
+      <div className="flex-1 overflow-auto bg-gray-50 p-8">
+        <p className="text-sm text-gray-400">Loading…</p>
+      </div>
+    )
+  }
+
+  const checks = [
+    { label: 'Score', value: `${scoreData.score} / 70`, ok: scoreData.score_ok },
+    { label: 'Governance', value: `${scoreData.governance_grade} / B`, ok: scoreData.governance_ok },
+    { label: 'Approval gate', value: scoreData.write_tools_gated ? 'gated' : 'not gated', ok: scoreData.write_tools_gated },
+  ]
+
+  const alreadySubmitted = scoreData.publish_status === 'pending' || scoreData.publish_status === 'approved'
+  const canClickPublish = scoreData.can_publish && !alreadySubmitted && !publishing
+
+  return (
+    <div className="flex-1 overflow-auto bg-gray-50 p-8">
+      <div className="max-w-3xl space-y-6">
+        <div>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Sharing</p>
+          <div className="border border-gray-200 rounded-lg bg-white px-4 py-3 flex items-center justify-between gap-4">
+            <p className="font-medium text-gray-900">Only you can access this agent</p>
+            <button
+              disabled
+              title="Workspace-level sharing isn't built yet"
+              className="px-3 py-1.5 text-xs font-medium border border-gray-300 rounded text-gray-400 cursor-not-allowed"
+            >
+              Change
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Marketplace publishing</p>
+          <div className="border border-gray-200 rounded-lg bg-white px-4 py-4">
+            <div className="flex flex-wrap gap-2 mb-4">
+              {checks.map((c) => (
+                <span
+                  key={c.label}
+                  className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-full ${
+                    c.ok ? 'bg-[#e6f7f2] text-[#2e9e7a]' : 'bg-red-50 text-red-600'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full inline-block ${c.ok ? 'bg-[#2e9e7a]' : 'bg-red-500'}`} />
+                  {c.label}: {c.value}
+                </span>
+              ))}
+            </div>
+
+            <button
+              onClick={handlePublish}
+              disabled={!canClickPublish}
+              className={`px-4 py-2 text-sm font-medium rounded-md text-white ${
+                canClickPublish ? 'hover:opacity-90' : 'bg-gray-300 cursor-not-allowed'
+              }`}
+              style={canClickPublish ? { backgroundColor: '#2e9e7a' } : undefined}
+            >
+              {alreadySubmitted ? 'Submitted for review' : publishing ? 'Publishing…' : 'Publish to Marketplace'}
+            </button>
+
+            <p className="text-xs text-gray-400 mt-2">
+              {alreadySubmitted
+                ? `Awaiting admin decision (status: ${scoreData.publish_status}). It won't be listed until approved.`
+                : scoreData.can_publish
+                  ? 'Passes every gate — an admin still has to approve it before it goes live.'
+                  : scoreData.blocked_reason}
+            </p>
+
+            {publishError && <p className="text-xs text-red-600 mt-2">{publishError}</p>}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function AgentDetail() {
   const { id } = useParams<{ id: string }>()
   const [searchParams] = useSearchParams()
@@ -366,6 +469,7 @@ export default function AgentDetail() {
     { key: 'connections', label: 'Connections', badge: expiredServers.length || undefined },
     { key: 'runs', label: 'Runs' },
     { key: 'api', label: 'API' },
+    { key: 'settings', label: 'Settings' },
   ]
 
   return (
@@ -768,6 +872,11 @@ export default function AgentDetail() {
       {/* ── API tab ── */}
       {tab === 'api' && (
         <ApiTab agent={agent} />
+      )}
+
+      {/* ── Settings tab ── */}
+      {tab === 'settings' && (
+        <SettingsTab agent={agent} />
       )}
 
       {/* ── Playground tab ── */}

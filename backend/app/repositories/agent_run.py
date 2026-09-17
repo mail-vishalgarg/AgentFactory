@@ -83,6 +83,19 @@ async def get_run_summary(db: AsyncSession, agent_id: uuid.UUID) -> RunSummary:
     )
 
 
+async def get_run_stats(db: AsyncSession, agent_id: uuid.UUID) -> tuple[int, int]:
+    """(total run count, ok run count) for a single agent — used for scoring."""
+    total_result = await db.execute(
+        select(func.count()).select_from(AgentRun).where(AgentRun.agent_id == agent_id)
+    )
+    ok_result = await db.execute(
+        select(func.count())
+        .select_from(AgentRun)
+        .where(AgentRun.agent_id == agent_id, AgentRun.status == "ok")
+    )
+    return total_result.scalar_one(), ok_result.scalar_one()
+
+
 async def get_run_summaries_for_owner(
     db: AsyncSession, owner_id: uuid.UUID
 ) -> dict[uuid.UUID, RunSummary]:

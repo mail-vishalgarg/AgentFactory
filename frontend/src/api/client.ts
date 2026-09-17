@@ -96,6 +96,17 @@ export interface AgentRunWithAgent extends AgentRun {
   agent_name: string
 }
 
+export interface AgentScore {
+  score: number
+  score_ok: boolean
+  governance_grade: string
+  governance_ok: boolean
+  write_tools_gated: boolean
+  can_publish: boolean
+  blocked_reason: string | null
+  publish_status: string | null
+}
+
 export interface RegisterServerRequest {
   name: string
   description: string
@@ -209,6 +220,9 @@ export const api = {
     req<void>(`/connections/${server_name}`, { method: 'DELETE' }),
   listRuns: (agentId: string) => req<AgentRun[]>(`/agents/${agentId}/runs`),
   listAllRuns: () => req<AgentRunWithAgent[]>('/agents/runs'),
+  getAgentScore: (agentId: string) => req<AgentScore>(`/agents/${agentId}/score`),
+  publishAgent: (agentId: string) =>
+    req<{ listing_id: string; status: string }>(`/agents/${agentId}/publish`, { method: 'POST' }),
   signup: (email: string, password: string) =>
     req<AuthResponse>('/auth/signup', { method: 'POST', body: JSON.stringify({ email, password }) }),
   login: (email: string, password: string) =>
