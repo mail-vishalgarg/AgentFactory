@@ -44,8 +44,8 @@ export default function ServerCard({ server, onDelete, onUpdate }: Props) {
   const [showSyncInput, setShowSyncInput] = useState(false)
   const [syncError, setSyncError] = useState('')
 
-  const visibleTools = server.tools.slice(0, 6)
-  const extra = server.tools.length - 6
+  // Tools dropdown state
+  const [showToolsDropdown, setShowToolsDropdown] = useState(false)
   const patInfo = getPatInfo(server.name, server.endpoint)
 
   async function handleConnectToken(e: React.FormEvent) {
@@ -300,16 +300,44 @@ export default function ServerCard({ server, onDelete, onUpdate }: Props) {
         </form>
       )}
 
-      {/* Tools */}
-      <div className="flex flex-col gap-1">
-        {visibleTools.map((t) => (
-          <div key={t.id} className="flex items-center justify-between">
-            <span className="text-xs font-mono text-gray-700">{t.name}</span>
-            <ToolPermissionBadge level={t.permission_level} />
+      {/* Tools Dropdown */}
+      <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50/50">
+        <button
+          type="button"
+          onClick={() => setShowToolsDropdown(!showToolsDropdown)}
+          className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer"
+        >
+          <div className="flex items-center gap-2">
+            <span className="text-gray-500 font-semibold uppercase tracking-wider text-[10px]">Tools</span>
+            <span className="px-1.5 py-0.5 rounded-full text-[11px] font-bold bg-gray-200 text-gray-800">
+              {server.tools.length}
+            </span>
           </div>
-        ))}
-        {extra > 0 && (
-          <span className="text-xs text-gray-400">+ {extra} more</span>
+          <div className="flex items-center gap-1 text-gray-500 text-[11px]">
+            <span>{showToolsDropdown ? 'Hide tools' : 'View all tools'}</span>
+            <span className={`transform transition-transform duration-200 ${showToolsDropdown ? 'rotate-180' : ''}`}>
+              ▼
+            </span>
+          </div>
+        </button>
+
+        {showToolsDropdown && (
+          <div className="border-t border-gray-200 bg-white divide-y divide-gray-100 max-h-56 overflow-y-auto px-3 py-1">
+            {server.tools.length === 0 ? (
+              <div className="py-2 text-center text-xs text-gray-400">
+                No tools registered yet for this server.
+              </div>
+            ) : (
+              server.tools.map((t) => (
+                <div key={t.id} className="py-1.5 flex items-center justify-between gap-2">
+                  <span className="text-xs font-mono text-gray-800 truncate" title={t.name}>
+                    {t.name}
+                  </span>
+                  <ToolPermissionBadge level={t.permission_level} />
+                </div>
+              ))
+            )}
+          </div>
         )}
       </div>
 
