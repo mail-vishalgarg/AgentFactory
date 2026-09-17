@@ -6,8 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ModelConfig(BaseModel):
-    provider: str = "openai"
-    model_id: str = "gpt-4o-mini"
+    provider: str = "gemini"
+    model_id: str = "gemini-2.0-flash"
     temperature: float = 0.0
     max_tokens: int = 4096
 
@@ -44,7 +44,7 @@ class AgentCreate(BaseModel):
     name: str
     description: str
     system_prompt: str = "You are a helpful assistant."
-    model_id: str = "gpt-4o-mini"
+    model_id: str = "gemini-2.0-flash"
     temperature: float = 0.0
     tool_ids: list[uuid.UUID]
     user_prompt: str = ""

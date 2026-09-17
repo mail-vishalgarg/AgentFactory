@@ -102,6 +102,18 @@ export default function LoginPage() {
             Sign up
           </Link>
         </p>
+
+        {/* User Onboarding Guide */}
+        <div className="mt-6 pt-4 border-t border-gray-100 bg-gray-50/70 rounded-lg p-3.5 text-xs text-gray-600">
+          <p className="font-semibold text-gray-800 flex items-center gap-1.5 mb-1.5">
+            <span>💡</span> How to proceed once logged in:
+          </p>
+          <ol className="list-decimal list-inside space-y-1 text-gray-500 leading-relaxed">
+            <li><strong>MCP Registry:</strong> View servers registered by your admin and click <em>+ Connect PAT</em> to link your personal tokens.</li>
+            <li><strong>+ Build:</strong> Create custom AI agents that use your connected tools (GitHub, Slack, etc.).</li>
+            <li><strong>Playground:</strong> Test and chat with your agent in real-time or export its API.</li>
+          </ol>
+        </div>
       </div>
     </div>
   )

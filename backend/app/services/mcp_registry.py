@@ -1,11 +1,16 @@
+import json
 import logging
+import os
+import sqlite3
 import uuid
 
 import httpx2
+from fastapi import HTTPException
 from mcp import ClientSession
 from mcp.client.streamable_http import streamable_http_client
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.mcp import MCPServer, MCPTool
 from app.repositories import mcp as mcp_repo
 
@@ -90,3 +95,127 @@ async def find_tools_for_prompt(db: AsyncSession, owner_id: uuid.UUID, prompt: s
             matched.append(server)
 
     return matched if matched else servers
+
+
+def get_external_catalog(registered_names: set[str]) -> list[dict]:
+    """Reads available MCP servers and tools from MyMCPRegistry SQLite database."""
+    db_path = settings.my_mcp_registry_db
+    if not os.path.exists(db_path):
+        logger.warning("MyMCPRegistry DB not found at %s", db_path)
+        return []
+
+    try:
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        c = conn.cursor()
+        c.execute("SELECT * FROM mcp_servers ORDER BY category, name")
+        rows = c.fetchall()
+
+        result = []
+        for r in rows:
+            server = dict(r)
+            s_id = server["id"]
+            name = server["name"]
+
+            c.execute(
+                "SELECT name, description, risk_level, input_schema FROM mcp_tools WHERE server_id = ? ORDER BY name",
+                (s_id,),
+            )
+            tools_rows = c.fetchall()
+            tools = []
+            for tr in tools_rows:
+                schema = tr["input_schema"]
+                if isinstance(schema, str):
+                    try:
+                        schema = json.loads(schema)
+                    except Exception:
+                        schema = {}
+                tools.append({
+                    "name": tr["name"],
+                    "description": tr["description"] or "",
+                    "permission_level": tr["risk_level"] or "read",
+                    "input_schema": schema if isinstance(schema, dict) else {},
+                })
+
+            result.append({
+                "id": s_id,
+                "name": name,
+                "display_name": server.get("display_name") or f"{name.title()} MCP",
+                "description": server.get("description") or "",
+                "category": server.get("category") or "Dev Tools",
+                "package_name": server.get("package_name") or "",
+                "transport": server.get("transport") or "stdio",
+                "command": server.get("command") or "",
+                "url": server.get("url") or "",
+                "endpoint": server.get("url") or server.get("command") or "",
+                "auth_type": server.get("auth_type") or "none",
+                "token_guide": server.get("token_guide") or "",
+                "tools_count": len(tools),
+                "tools": tools,
+                "is_registered": name.lower() in registered_names,
+            })
+        conn.close()
+        return result
+    except Exception as exc:
+        logger.error("Failed to load external MCP catalog from %s: %s", db_path, exc)
+        return []
+
+
+async def register_from_external_catalog(
+    db: AsyncSession,
+    owner_id: uuid.UUID,
+    server_name: str,
+    token: str = "",
+    is_shared: bool = True,
+) -> MCPServer:
+    """Registers an MCP server and all its catalog tools from MyMCPRegistry into AgentFactory."""
+    catalog = get_external_catalog(set())
+    target = next((s for s in catalog if s["name"].lower() == server_name.lower()), None)
+    if not target:
+        raise HTTPException(status_code=404, detail=f"Server '{server_name}' not found in MyMCPRegistry")
+
+    existing = await mcp_repo.get_server_by_name(db, target["name"])
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Server '{target['name']}' is already registered in AgentFactory.")
+
+    endpoint = target["url"] or target["command"] or f"https://mcp.example.com/{target['name']}"
+    server = await mcp_repo.create_server(
+        db,
+        owner_id=owner_id,
+        name=target["name"],
+        description=target["description"],
+        transport=target["transport"],
+        endpoint=endpoint,
+        auth_type=target["auth_type"],
+        is_shared=is_shared,
+        status="healthy",
+    )
+
+    for tool in target["tools"]:
+        await mcp_repo.create_tool(
+            db,
+            mcp_server_id=server.id,
+            name=tool["name"],
+            description=tool["description"],
+            permission_level=tool["permission_level"],
+            input_schema=tool["input_schema"],
+        )
+
+    # If an auth token is provided during registration, strictly verify it before storing
+    if token.strip():
+        from app.services.github_tools import verify_pat_token
+        ok, msg = verify_pat_token(target["name"], token.strip(), endpoint)
+        if not ok:
+            raise HTTPException(status_code=422, detail=f"Token verification failed for {target['name']}: {msg}")
+
+        from app.repositories import connection as conn_repo
+        await conn_repo.upsert_connection(
+            db,
+            user_id=owner_id,
+            server_name=target["name"],
+            token=token.strip(),
+        )
+
+    await db.commit()
+    refreshed = await mcp_repo.get_server_with_tools(db, server.id)
+    return refreshed or server

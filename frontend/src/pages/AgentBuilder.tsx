@@ -45,6 +45,7 @@ export default function AgentBuilder() {
   const [agentName, setAgentName] = useState('')
   const [builtAgent, setBuiltAgent] = useState<Agent | null>(null)
   const [error, setError] = useState('')
+  const [showToolsDropdown, setShowToolsDropdown] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -56,6 +57,8 @@ export default function AgentBuilder() {
     setStage(1)
     setError('')
     try {
+      // Backend returns ALL visible servers (matched ones come first).
+      // All are pre-checked; user deselects what they don't need.
       const servers = await api.suggestTools(prompt)
       setSuggestedServers(servers)
       setCheckedServers(new Set(servers.map((s) => s.id)))
@@ -73,23 +76,31 @@ export default function AgentBuilder() {
       return
     }
 
-    // Check which servers already have tokens stored elsewhere
-    try {
-      const serverNames = needsCreds.map((s) => s.name)
-      const availability = await api.getCredentialAvailability(serverNames)
-      const alreadyConnected = new Set(
-        serverNames.filter((name) => availability[name]?.available)
-      )
-      setPreConnected(alreadyConnected)
+    // Use the `connected` flag from the server response (set by backend
+    // from the connections table) to determine which already have PATs.
+    const alreadyConnected = new Set(
+      needsCreds.filter((s) => s.connected).map((s) => s.name)
+    )
 
-      // If ALL servers already have tokens, skip straight to build
-      if (alreadyConnected.size === needsCreds.length) {
-        setStage(3)
-      } else {
-        setStage(2)
+    // Also check credential-availability as a fallback (tokens stored in agents)
+    try {
+      const uncheckedNames = needsCreds.filter((s) => !s.connected).map((s) => s.name)
+      if (uncheckedNames.length > 0) {
+        const availability = await api.getCredentialAvailability(uncheckedNames)
+        for (const name of uncheckedNames) {
+          if (availability[name]?.available) alreadyConnected.add(name)
+        }
       }
     } catch {
-      // If availability check fails, fall through to credential step
+      // ignore — we already have the `connected` field as primary source
+    }
+
+    setPreConnected(alreadyConnected)
+
+    // If ALL servers already have tokens, skip straight to build
+    if (alreadyConnected.size === needsCreds.length) {
+      setStage(3)
+    } else {
       setStage(2)
     }
   }
@@ -134,25 +145,38 @@ export default function AgentBuilder() {
   useEffect(() => {
     if (stage !== 3) return
     const selected = suggestedServers.filter((s) => checkedServers.has(s.id))
-    const toolIds = selected.flatMap((s) => s.tools.map((t) => t.id))
+    const toolIds = selected.flatMap((s) => s.tools?.map((t) => t.id) ?? [])
     const name = agentName.trim() || deriveAgentName(selected)
+
+    // Merge explicit credentials with pre-connected server names so the
+    // backend can resolve tokens from the connections table.
+    const allCredentials = { ...credentials }
+    for (const s of selected) {
+      if (s.connected && !allCredentials[s.name]) {
+        allCredentials[s.name] = '__CONNECTION__'  // signal: use stored connection token
+      }
+    }
 
     api
       .createAgent({
         name,
         description: prompt,
         system_prompt: `You are a helpful assistant. ${prompt}`,
-        model_id: 'gpt-4o-mini',
+        model_id: 'gemini-2.0-flash',
         temperature: 0.0,
         tool_ids: toolIds,
         user_prompt: prompt,
-        credentials,
+        credentials: allCredentials,
       })
       .then((agent) => {
         setBuiltAgent(agent)
         setStage(4)
       })
-      .catch(() => setError('Failed to build agent.'))
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : 'Failed to build agent.'
+        setError(msg)
+        setStage(2)
+      })
   }, [stage])
 
   const completedSteps = stage === 0 ? 0 : stage === 1 ? 1 : stage === 2 ? 2 : stage === 3 ? 3 : 4
@@ -265,9 +289,19 @@ export default function AgentBuilder() {
                           <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#2e9e7a' }} />
                           <span className="text-xs text-gray-500">{server.auth_type !== 'none' ? 'needs credentials' : 'no auth required'}</span>
                         </div>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          {server.tools.map((t) => `${t.name} — ${t.permission_level}`).join(' · ')}
-                        </p>
+                        <details className="mt-1 text-xs text-gray-500 group" onClick={(e) => e.stopPropagation()}>
+                          <summary className="cursor-pointer text-[#2e9e7a] hover:underline font-medium inline-flex items-center gap-1 select-none">
+                            <span>{server.tools.length} tools available</span>
+                            <span className="text-[10px] text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+                          </summary>
+                          <div className="mt-1.5 p-2 bg-gray-50 rounded border border-gray-200 max-h-36 overflow-y-auto flex flex-wrap gap-1">
+                            {server.tools.map((t) => (
+                              <span key={t.id} className="px-1.5 py-0.5 bg-white border border-gray-200 rounded text-[11px] text-gray-700 font-mono">
+                                {t.name} <span className="text-gray-400 font-sans">({t.permission_level})</span>
+                              </span>
+                            ))}
+                          </div>
+                        </details>
                       </div>
                     </label>
                   ))}
@@ -416,14 +450,62 @@ export default function AgentBuilder() {
                       </div>
                     </div>
                     <div>
-                      <span className="text-xs text-gray-400 block mb-1">Tools</span>
-                      <div className="flex flex-wrap gap-1">
-                        {builtAgent.config.tools.map((t) => (
-                          <span key={`${t.mcp_server_name}.${t.tool_name}`} className="text-xs bg-gray-100 text-gray-700 px-2 py-0.5 rounded font-mono">
-                            {t.mcp_server_name}.{t.tool_name}
+                      <button
+                        type="button"
+                        onClick={() => setShowToolsDropdown(!showToolsDropdown)}
+                        className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-gray-700 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-400 uppercase tracking-wide font-semibold text-[10px]">Tools</span>
+                          <span className="px-1.5 py-0.5 rounded bg-white border border-gray-200 text-gray-800 font-semibold">
+                            {builtAgent.config.tools.length} configured
                           </span>
-                        ))}
-                      </div>
+                          <span className="text-gray-400 text-xs truncate max-w-[200px]">
+                            ({Array.from(new Set(builtAgent.config.tools.map((t) => t.mcp_server_name))).join(', ')})
+                          </span>
+                        </div>
+                        <span className="text-gray-500 text-xs flex items-center gap-1 font-normal">
+                          {showToolsDropdown ? 'Hide tools ▲' : 'View tools dropdown ▼'}
+                        </span>
+                      </button>
+
+                      {showToolsDropdown && (
+                        <div className="mt-2 p-3 border border-gray-200 rounded-lg bg-white shadow-sm max-h-56 overflow-y-auto space-y-3">
+                          {Array.from(new Set(builtAgent.config.tools.map((t) => t.mcp_server_name))).map((serverName) => {
+                            const serverTools = builtAgent.config.tools.filter((t) => t.mcp_server_name === serverName)
+                            return (
+                              <div key={serverName} className="space-y-1.5">
+                                <div className="flex items-center justify-between text-xs font-semibold text-gray-800 border-b pb-1">
+                                  <span className="flex items-center gap-1.5">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-[#2e9e7a]" />
+                                    {serverName}
+                                  </span>
+                                  <span className="text-[11px] font-normal text-gray-400">
+                                    {serverTools.length} tool{serverTools.length !== 1 ? 's' : ''}
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1">
+                                  {serverTools.map((t) => (
+                                    <div
+                                      key={`${t.mcp_server_name}.${t.tool_name}`}
+                                      className="flex items-center justify-between text-xs bg-gray-50 hover:bg-gray-100 border border-gray-100 rounded px-2 py-1 font-mono text-gray-700"
+                                    >
+                                      <span className="truncate mr-2">{t.tool_name}</span>
+                                      <span className={`text-[10px] px-1 rounded uppercase font-sans font-medium ${
+                                        t.permission_level === 'destructive' ? 'bg-red-50 text-red-600' :
+                                        t.permission_level === 'write' ? 'bg-amber-50 text-amber-700' :
+                                        'bg-blue-50 text-blue-600'
+                                      }`}>
+                                        {t.permission_level}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                     <div className="flex gap-3 pt-1">
                       <button

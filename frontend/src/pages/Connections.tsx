@@ -26,16 +26,21 @@ function AddPanel({ onClose, onAdded }: AddPanelProps) {
   const [token, setToken] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [successMsg, setSuccessMsg] = useState('')
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault()
     setError('')
+    setSuccessMsg('')
     setSaving(true)
     try {
       const conn = await api.addConnection(serverName.trim(), token.trim())
-      onAdded(conn)
+      setSuccessMsg(conn.message || 'Token verified and connected successfully!')
+      setTimeout(() => {
+        onAdded(conn)
+      }, 1200)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to save connection')
+      setError(err instanceof Error ? err.message : 'Verification failed')
     } finally {
       setSaving(false)
     }
@@ -55,6 +60,12 @@ function AddPanel({ onClose, onAdded }: AddPanelProps) {
         {error && (
           <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded">
             {error}
+          </div>
+        )}
+
+        {successMsg && (
+          <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs rounded font-medium flex items-center gap-1.5">
+            <span>✓</span> {successMsg}
           </div>
         )}
 

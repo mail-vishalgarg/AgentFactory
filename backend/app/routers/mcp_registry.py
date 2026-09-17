@@ -33,6 +33,46 @@ async def _to_responses(
     return responses
 
 
+class CatalogRegisterRequest(BaseModel):
+    name: str
+    token: str = ""
+    is_shared: bool = True
+
+
+@router.get("/catalog")
+async def get_catalog(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[dict]:
+    """Admin-only: fetch full catalog of available MCP servers from MyMCPRegistry."""
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Only administrators can browse the MCP catalog.")
+
+    existing_servers = await mcp_repo.list_visible_servers(db, user.id)
+    existing_names = {s.name.lower() for s in existing_servers}
+    return svc.get_external_catalog(existing_names)
+
+
+@router.post("/register-from-catalog", response_model=MCPServerResponse, status_code=201)
+async def register_from_catalog(
+    body: CatalogRegisterRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> MCPServerResponse:
+    """Admin-only: register an MCP server with all its tools from MyMCPRegistry."""
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Only administrators can register MCP servers.")
+
+    server = await svc.register_from_external_catalog(
+        db,
+        owner_id=user.id,
+        server_name=body.name,
+        token=body.token,
+        is_shared=body.is_shared,
+    )
+    return (await _to_responses(db, user, [server]))[0]
+
+
 @router.get("/servers", response_model=list[MCPServerResponse])
 async def list_servers(
     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)
@@ -51,6 +91,9 @@ async def register_server(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> MCPServerResponse:
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Only administrators can register MCP servers.")
+
     existing = await mcp_repo.get_server_by_name(db, body.name)
     if existing:
         raise HTTPException(status_code=409, detail=f"Server '{body.name}' is already registered.")
@@ -98,6 +141,9 @@ async def sync_server_tools(
     user: User = Depends(get_current_user),
 ) -> MCPServerResponse:
     """Re-discover tools from the live MCP endpoint and replace stored ones."""
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Only administrators can sync MCP servers.")
+
     server = await mcp_repo.get_server_with_tools(db, server_id)
     if server is None:
         raise HTTPException(status_code=404, detail="Server not found")
@@ -130,10 +176,8 @@ async def delete_server(
     server = await mcp_repo.get_server_with_tools(db, server_id)
     if server is None:
         raise HTTPException(status_code=404, detail="Server not found")
-    # Shared catalog: anyone can read/use it, but only the registrant or an
-    # admin can remove it for everyone.
-    if server.owner_id != user.id and not user.is_admin:
-        raise HTTPException(status_code=403, detail="Only the server's registrant or an admin can remove it.")
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Only administrators can delete MCP servers.")
     await db.delete(server)
     await db.commit()
 
@@ -227,5 +271,13 @@ async def suggest_tools(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[MCPServerResponse]:
-    servers = await svc.find_tools_for_prompt(db, user.id, prompt)
-    return await _to_responses(db, user, servers)
+    """Return ALL visible servers. Matched servers come first so the frontend
+    can pre-check them; the user deselects whatever they don't need."""
+    matched = await svc.find_tools_for_prompt(db, user.id, prompt)
+    all_servers = await svc.list_servers(db, user.id)
+
+    matched_ids = {s.id for s in matched}
+    # matched first, then the rest (not duplicated)
+    ordered = list(matched) + [s for s in all_servers if s.id not in matched_ids]
+
+    return await _to_responses(db, user, ordered)

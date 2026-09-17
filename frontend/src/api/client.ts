@@ -27,6 +27,31 @@ export interface MCPTool {
   permission_level: 'read' | 'write' | 'destructive'
 }
 
+export interface CatalogTool {
+  name: string
+  description: string
+  permission_level: 'read' | 'write' | 'destructive'
+  input_schema: Record<string, unknown>
+}
+
+export interface CatalogServer {
+  id: string
+  name: string
+  display_name: string
+  description: string
+  category: string
+  package_name: string
+  transport: string
+  command: string
+  url: string
+  endpoint: string
+  auth_type: string
+  token_guide: string
+  tools_count: number
+  tools: CatalogTool[]
+  is_registered: boolean
+}
+
 export interface MCPServer {
   id: string
   name: string
@@ -40,6 +65,25 @@ export interface MCPServer {
   created_at: string
   tools: MCPTool[]
   connected: boolean
+}
+
+export interface EvaluationDimension {
+  name: string
+  score: number
+  max_score: number
+  status: string
+  details: string
+}
+
+export interface AgentEvaluation {
+  agent_id: string
+  overall_score: number
+  safety_grade: string
+  benchmark_status: string
+  evaluated_at: string
+  latency_ms: number
+  dimensions: EvaluationDimension[]
+  diagnostic_output: string
 }
 
 export interface AgentConfig {
@@ -58,14 +102,14 @@ export interface AgentConfig {
     permission_level: string
   }[]
   graph: { type: string; checkpointer: boolean }
-  metadata: { user_prompt: string; builder_version: string }
+  metadata: { user_prompt?: string; builder_version?: string; evaluation?: AgentEvaluation }
 }
 
 export interface Agent {
   id: string
   name: string
   description: string
-  status: 'draft' | 'live' | 'archived'
+  status: 'draft' | 'live' | 'archived' | 'active' | 'tested'
   config: AgentConfig
   created_at: string
   api_token: string
@@ -79,6 +123,8 @@ export interface Connection {
   status: 'active' | 'revoked'
   created_at: string
   last_used_at: string | null
+  message?: string
+  verified?: boolean
 }
 
 export interface AgentRun {
@@ -175,14 +221,33 @@ async function extractErrorMessage(res: Response): Promise<string> {
 }
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-      ...(init?.headers ?? {}),
-    },
-  })
+  let res: Response
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        ...(init?.headers ?? {}),
+      },
+    })
+  } catch (err: unknown) {
+    if (err instanceof TypeError && (err.message === 'Load failed' || err.message.includes('fetch'))) {
+      const altBase = BASE.includes('localhost')
+        ? BASE.replace('localhost', '127.0.0.1')
+        : BASE.replace('127.0.0.1', 'localhost')
+      res = await fetch(`${altBase}${path}`, {
+        ...init,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+          ...(init?.headers ?? {}),
+        },
+      })
+    } else {
+      throw err
+    }
+  }
   if (!res.ok) {
     const message = await extractErrorMessage(res)
     if (res.status === 401) onUnauthorized?.()
@@ -193,6 +258,12 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  getCatalog: () => req<CatalogServer[]>('/mcp/catalog'),
+  registerFromCatalog: (name: string, token?: string, is_shared: boolean = true) =>
+    req<MCPServer>('/mcp/register-from-catalog', {
+      method: 'POST',
+      body: JSON.stringify({ name, ...(token ? { token } : {}), is_shared }),
+    }),
   getMcpServers: () => req<MCPServer[]>('/mcp/servers'),
   registerServer: (body: RegisterServerRequest) =>
     req<MCPServer>('/mcp/servers', { method: 'POST', body: JSON.stringify(body) }),
@@ -210,6 +281,8 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ message }),
     }),
+  evaluateAgent: (agentId: string) =>
+    req<AgentEvaluation>(`/agents/${agentId}/evaluate`, { method: 'POST' }),
   verifyToken: (server: string, token: string) =>
     req<{ ok: boolean; message: string }>('/agents/verify-token', {
       method: 'POST',
