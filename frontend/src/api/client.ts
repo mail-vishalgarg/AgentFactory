@@ -96,6 +96,26 @@ export interface AgentRunWithAgent extends AgentRun {
   agent_name: string
 }
 
+export interface MarketplaceTool {
+  mcp_server_name: string
+  tool_name: string
+  tool_description: string
+  permission_level: string
+  requires_approval: boolean
+}
+
+export interface MarketplaceListing {
+  id: string
+  name: string
+  description: string
+  tools: MarketplaceTool[]
+  score: number
+  governance_grade: string
+  publisher_org: string
+  install_count: number
+  submitted_at: string
+}
+
 export interface AgentScore {
   score: number
   score_ok: boolean
@@ -223,6 +243,10 @@ export const api = {
   getAgentScore: (agentId: string) => req<AgentScore>(`/agents/${agentId}/score`),
   publishAgent: (agentId: string) =>
     req<{ listing_id: string; status: string }>(`/agents/${agentId}/publish`, { method: 'POST' }),
+  listMarketplace: () => req<MarketplaceListing[]>('/marketplace'),
+  getMarketplaceListing: (listingId: string) => req<MarketplaceListing>(`/marketplace/${listingId}`),
+  installListing: (listingId: string) =>
+    req<Agent>(`/marketplace/${listingId}/install`, { method: 'POST' }),
   signup: (email: string, password: string) =>
     req<AuthResponse>('/auth/signup', { method: 'POST', body: JSON.stringify({ email, password }) }),
   login: (email: string, password: string) =>

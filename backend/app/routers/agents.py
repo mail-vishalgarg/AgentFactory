@@ -191,22 +191,29 @@ async def publish_agent(
     if not gate.can_publish:
         raise HTTPException(status_code=400, detail=gate.blocked_reason)
 
-    # Sanitized design only: no credentials, no internal mcp_server_id.
+    # Sanitized design only: no credentials, no internal mcp_server_id, no
+    # publisher identity beyond an org label derived from their email domain.
     sanitized_tools = [
         {
             "mcp_server_name": t.mcp_server_name,
             "tool_name": t.tool_name,
             "tool_description": t.tool_description,
             "permission_level": t.permission_level,
+            "requires_approval": t.requires_approval,
         }
         for t in config.tools
     ]
+    publisher_org = user.email.split("@")[-1] if "@" in user.email else "unknown"
     listing = await marketplace_repo.create_listing(
         db,
         agent_id=agent_id,
         publisher_owner_id=user.id,
+        publisher_org=publisher_org,
         name=agent.name,
         description=agent.description,
+        system_prompt=config.system_prompt,
+        model_id=config.model.model_id,
+        temperature=config.model.temperature,
         tools=sanitized_tools,
         score=gate.score,
         governance_grade=gate.governance,

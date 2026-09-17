@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Integer, String, Text, func
+from sqlalchemy import DateTime, Integer, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -20,6 +20,10 @@ class MarketplaceListing(Base):
     tools: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False, default=list)
     score: Mapped[int] = mapped_column(Integer, nullable=False)
     governance_grade: Mapped[str] = mapped_column(String, nullable=False)
+    system_prompt: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    model_id: Mapped[str] = mapped_column(String, nullable=False, default="gpt-4o-mini")
+    temperature: Mapped[float] = mapped_column(Numeric(3, 2), nullable=False, default=0)
+    publisher_org: Mapped[str] = mapped_column(String, nullable=False, default="")
     status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
     review_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     install_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
