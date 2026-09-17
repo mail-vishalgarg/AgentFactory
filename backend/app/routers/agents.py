@@ -20,7 +20,7 @@ from app.schemas.agent import (
     AgentRunResponse,
 )
 from app.services.agent_builder import build_agent_config, execute_agent
-from app.services.github_tools import verify_github_token, verify_slack_token
+from app.services.github_tools import verify_pat_token
 
 router = APIRouter()
 
@@ -222,13 +222,7 @@ async def get_credential_status(
     last_used: dict = agent.server_last_used or {}
     result: dict[str, dict] = {}
     for key, token in (agent.credentials or {}).items():
-        if "github" in key.lower():
-            ok, msg = verify_github_token(token)
-        elif "slack" in key.lower():
-            ok, msg = verify_slack_token(token)
-        else:
-            ok, msg = True, "No verification available"
-        # Key by the actual credential key (mcp_server_name) so the frontend can match it
+        ok, msg = verify_pat_token(key, token)
         result[key] = {
             "ok": ok,
             "message": msg,
@@ -254,12 +248,7 @@ async def update_agent_credentials(
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
 
-    if "github" in body.server.lower():
-        ok, msg = verify_github_token(body.token)
-    elif "slack" in body.server.lower():
-        ok, msg = verify_slack_token(body.token)
-    else:
-        ok, msg = True, f"{body.server} token accepted"
+    ok, msg = verify_pat_token(body.server, body.token)
 
     if ok:
         await agent_repo.update_credentials(db, agent_id, body.server, body.token)
@@ -289,13 +278,8 @@ async def revoke_agent_credential(
 async def verify_token(
     body: VerifyTokenRequest, user: User = Depends(get_current_user)
 ) -> VerifyTokenResponse:
-    if "github" in body.server.lower():
-        ok, msg = verify_github_token(body.token)
-        return VerifyTokenResponse(ok=ok, message=msg)
-    if "slack" in body.server.lower():
-        ok, msg = verify_slack_token(body.token)
-        return VerifyTokenResponse(ok=ok, message=msg)
-    return VerifyTokenResponse(ok=True, message=f"{body.server} token accepted")
+    ok, msg = verify_pat_token(body.server, body.token)
+    return VerifyTokenResponse(ok=ok, message=msg)
 
 
 class EvaluationDimension(BaseModel):

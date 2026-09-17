@@ -201,15 +201,19 @@ async def register_from_external_catalog(
             input_schema=tool["input_schema"],
         )
 
-    # If an auth token is provided during registration, store it in user's connections
+    # If an auth token is provided during registration, strictly verify it before storing
     if token.strip():
+        from app.services.github_tools import verify_pat_token
+        ok, msg = verify_pat_token(target["name"], token.strip(), endpoint)
+        if not ok:
+            raise HTTPException(status_code=422, detail=f"Token verification failed for {target['name']}: {msg}")
+
         from app.repositories import connection as conn_repo
-        await conn_repo.save_connection(
+        await conn_repo.upsert_connection(
             db,
-            owner_id=owner_id,
+            user_id=owner_id,
             server_name=target["name"],
             token=token.strip(),
-            status="active",
         )
 
     await db.commit()

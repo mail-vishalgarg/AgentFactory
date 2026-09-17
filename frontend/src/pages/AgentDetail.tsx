@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import { api, type Agent, type AgentConfig, type AgentRun, type AgentEvaluation } from '../api/client'
 
 type Tab = 'overview' | 'playground' | 'connections' | 'runs' | 'api'
@@ -477,9 +477,12 @@ function ApiTab({ agent }: { agent: Agent }) {
 
 export default function AgentDetail() {
   const { id } = useParams<{ id: string }>()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
   const [agent, setAgent] = useState<Agent | null>(null)
-  const [tab, setTab] = useState<Tab>((searchParams.get('tab') as Tab) ?? 'overview')
+  const isPlaygroundPath = location.pathname.endsWith('/playground')
+  const initialTab: Tab = isPlaygroundPath ? 'playground' : ((searchParams.get('tab') as Tab) ?? 'overview')
+  const [tab, setTab] = useState<Tab>(initialTab)
   const [fetchError, setFetchError] = useState('')
 
   // Credential status

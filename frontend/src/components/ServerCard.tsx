@@ -35,6 +35,7 @@ export default function ServerCard({ server, onDelete, onUpdate }: Props) {
   const [connecting, setConnecting] = useState(false)
   const [connectError, setConnectError] = useState('')
   const [connectSuccess, setConnectSuccess] = useState(false)
+  const [connectMessage, setConnectMessage] = useState('')
 
   // Sync tools state (Admin only)
   const [syncing, setSyncing] = useState(false)
@@ -54,16 +55,18 @@ export default function ServerCard({ server, onDelete, onUpdate }: Props) {
     setConnecting(true)
     setConnectError('')
     try {
-      await api.addConnection(server.name, patToken.trim())
+      const res = await api.addConnection(server.name, patToken.trim())
       setConnectSuccess(true)
+      setConnectMessage(res.message || 'Token verified and connected successfully!')
       setTimeout(() => {
         setConnectSuccess(false)
+        setConnectMessage('')
         setShowConnectForm(false)
         setPatToken('')
-      }, 1500)
+      }, 2000)
       onUpdate?.({ ...server, connected: true })
     } catch (err: unknown) {
-      setConnectError(err instanceof Error ? err.message : 'Failed to connect token.')
+      setConnectError(err instanceof Error ? err.message : 'Token verification failed.')
     } finally {
       setConnecting(false)
     }
@@ -266,8 +269,8 @@ export default function ServerCard({ server, onDelete, onUpdate }: Props) {
           )}
 
           {connectSuccess && (
-            <div className="p-2 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs rounded font-medium flex items-center gap-1">
-              <span>✓</span> Connected successfully!
+            <div className="p-2 bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs rounded font-medium flex items-center gap-1.5">
+              <span>✓</span> {connectMessage || 'Token verified and connected successfully!'}
             </div>
           )}
 

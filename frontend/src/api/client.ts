@@ -120,6 +120,8 @@ export interface Connection {
   status: 'active' | 'revoked'
   created_at: string
   last_used_at: string | null
+  message?: string
+  verified?: boolean
 }
 
 export interface AgentRun {
