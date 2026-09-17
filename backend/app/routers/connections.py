@@ -52,9 +52,10 @@ async def add_connection(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> ConnectionResponse:
-    trimmed_token = body.token.strip()
-    if not trimmed_token:
-        raise HTTPException(status_code=400, detail="Token cannot be empty")
+    # Clean accidental unicode/zero-width spaces or surrounding quotes
+    cleaned_token = "".join(c for c in body.token if 32 <= ord(c) <= 126).strip().strip("\"'")
+    if not cleaned_token:
+        raise HTTPException(status_code=400, detail="Token cannot be empty or contain only invalid characters.")
 
     norm_server = body.server_name.strip().lower()
 
@@ -65,7 +66,7 @@ async def add_connection(
         endpoint = server_obj.endpoint or ""
 
     # Perform strict token verification
-    ok, verify_msg = verify_pat_token(norm_server, trimmed_token, endpoint)
+    ok, verify_msg = verify_pat_token(norm_server, cleaned_token, endpoint)
     if not ok:
         raise HTTPException(
             status_code=422,
@@ -73,7 +74,7 @@ async def add_connection(
         )
 
     try:
-        conn = await conn_repo.upsert_connection(db, user.id, norm_server, trimmed_token)
+        conn = await conn_repo.upsert_connection(db, user.id, norm_server, cleaned_token)
         await db.commit()
     except Exception as exc:
         await db.rollback()

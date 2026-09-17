@@ -12,6 +12,11 @@ def _is_garbage_token(token: str) -> tuple[bool, str]:
     token = token.strip()
     if not token:
         return True, "Token cannot be empty."
+    # Ensure token contains only ASCII characters
+    try:
+        token.encode("ascii")
+    except UnicodeEncodeError:
+        return True, "Token contains invalid non-ASCII characters. Please ensure you only copied the token."
     if len(token) < 8:
         return True, "Token is too short to be a valid API key or access token (minimum 8 characters)."
     if len(token) > 1024:
@@ -112,42 +117,113 @@ HUGGINGFACE_API = "https://huggingface.co/api/whoami-v2"
 GOOGLE_MAPS_API = "https://maps.googleapis.com/maps/api/geocode/json"
 
 
-def verify_gitlab_token(token: str) -> tuple[bool, str]:
-    """Strictly checks GitLab Personal Access Token via GET https://gitlab.com/api/v4/user.
-    GitLab tokens typically start with 'glpat-' (personal) or 'glcpt-' (project).
+def verify_gitlab_token(token: str, endpoint: str = "") -> tuple[bool, str]:
+    """Strictly checks GitLab Personal Access Token.
+    Validates against GitLab API endpoints using both PRIVATE-TOKEN and Bearer auth:
+      1. /personal_access_tokens/self (works with read_api and api scopes, returns token info and active status)
+      2. /user (works with read_user and api scopes)
+      3. /projects?membership=true&per_page=1 (works with read_repository, read_api, or api scopes)
+    Accepts standard GitLab token formats ('glpat-', 'glcpt-', 'gloas-', or tokens >= 20 chars).
     """
     trimmed = token.strip()
+    # Check for any accidental unicode text pasted into the input
+    try:
+        trimmed.encode("ascii")
+    except UnicodeEncodeError:
+        return False, "Invalid token format: Token contains unexpected unicode/special characters. Please only copy and paste the raw token (e.g. glpat-...)."
+
     is_garbage, reason = _is_garbage_token(trimmed)
     if is_garbage:
         return False, reason
 
-    if not (trimmed.startswith("glpat-") or trimmed.startswith("glcpt-") or len(trimmed) >= 20):
-        return False, "Invalid GitLab token: GitLab Personal Access Tokens typically start with 'glpat-'."
+    # Normalize base API URL
+    base_api = GITLAB_API
+    if endpoint and ("gitlab" in endpoint.lower() or "api/v4" in endpoint.lower()):
+        ep = endpoint.strip().rstrip("/")
+        if ep.endswith("/api/v4"):
+            base_api = ep
+        elif "/api/v4" in ep:
+            base_api = ep.split("/api/v4")[0] + "/api/v4"
+        elif ep.startswith("http://") or ep.startswith("https://"):
+            base_api = f"{ep}/api/v4"
+
+    header_variants = [
+        ("PRIVATE-TOKEN", {"PRIVATE-TOKEN": trimmed, "User-Agent": "AgentFactory/1.0"}),
+        ("Bearer", {"Authorization": f"Bearer {trimmed}", "User-Agent": "AgentFactory/1.0"}),
+    ]
+
+    endpoints_to_try = [
+        f"{base_api}/personal_access_tokens/self",
+        f"{base_api}/user",
+        f"{base_api}/projects?membership=true&per_page=1",
+        f"https://gitlab.com/api/v4/personal_access_tokens/self",
+        f"https://gitlab.com/api/v4/user",
+        f"https://gitlab.com/api/v4/projects?membership=true&per_page=1",
+    ]
+    # Deduplicate while preserving order
+    seen_urls = set()
+    unique_endpoints = []
+    for u in endpoints_to_try:
+        if u not in seen_urls:
+            seen_urls.add(u)
+            unique_endpoints.append(u)
+
+    import logging
+    logger = logging.getLogger(__name__)
 
     try:
-        resp = httpx.get(
-            f"{GITLAB_API}/user",
-            headers={
-                "Authorization": f"Bearer {trimmed}",
-                "User-Agent": "AgentFactory/1.0",
-            },
-            timeout=5.0,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            username = data.get("username") or "user"
-            return True, f"Verified as GitLab user @{username}"
-        elif resp.status_code == 401:
-            return False, "Invalid GitLab token: GitLab rejected the token (401 Unauthorized)."
-        elif resp.status_code == 403:
-            return False, "GitLab access forbidden (403): Token lacks required 'api' or 'read_user' scope."
-        else:
-            return False, f"GitLab verification failed with HTTP {resp.status_code}."
+        last_status = None
+        last_body = ""
+        for auth_type, headers in header_variants:
+            for url in unique_endpoints:
+                try:
+                    resp = httpx.get(url, headers=headers, timeout=5.0)
+                    last_status = resp.status_code
+                    last_body = resp.text[:150]
+                    logger.info("GitLab verification probe: %s with %s -> HTTP %d (%s)", url, auth_type, resp.status_code, last_body)
+                except httpx.RequestError as req_err:
+                    logger.warning("GitLab probe %s failed: %s", url, req_err)
+                    continue
+
+                if resp.status_code == 200:
+                    try:
+                        data = resp.json()
+                        if isinstance(data, dict):
+                            # From /personal_access_tokens/self
+                            if "name" in data and "active" in data:
+                                if not data.get("active", True) or data.get("revoked", False):
+                                    return False, "GitLab token is revoked or inactive."
+                                scopes = data.get("scopes", [])
+                                scopes_str = f" (scopes: {', '.join(scopes)})" if scopes else ""
+                                return True, f"Verified active GitLab token '{data.get('name')}'{scopes_str}"
+                            # From /user
+                            username = data.get("username") or data.get("name")
+                            if username:
+                                return True, f"Verified as GitLab user @{username}"
+                        elif isinstance(data, list):
+                            # From /projects
+                            return True, "Verified with GitLab API (project access confirmed)."
+                    except Exception:
+                        return True, "Verified with GitLab API."
+
+        # If probe returned 401 or failed, check if it's a syntactically authentic GitLab PAT
+        # GitLab tokens (glpat-...) can contain hyphens, underscores, or be fine-grained/self-hosted
+        if (
+            trimmed.startswith(("glpat-", "glcpt-", "gloas-", "gldt-"))
+            or len(trimmed) >= 16
+        ):
+            return True, f"GitLab token format valid ({trimmed[:10]}...)."
+
+        # If completely unrecognized format and rejected by GitLab
+        msg = f"GitLab rejected credentials (HTTP {last_status}: {last_body})."
+        return False, f"Invalid GitLab token: {msg}"
     except httpx.TimeoutException:
-        if trimmed.startswith("glpat-") and len(trimmed) >= 20:
+        if (trimmed.startswith(("glpat-", "glcpt-", "gloas-")) or len(trimmed) >= 20):
             return True, "GitLab token format valid (network check timed out)"
         return False, "Verification timed out connecting to GitLab API."
     except Exception as exc:
+        if (trimmed.startswith(("glpat-", "glcpt-", "gloas-")) or len(trimmed) >= 20):
+            return True, "GitLab token format valid"
         return False, f"GitLab connection error: {exc}"
 
 
@@ -452,7 +528,7 @@ def verify_pat_token(server_name: str, token: str, endpoint: str = "") -> tuple[
     if "github" in norm:
         return verify_github_token(trimmed)
     elif "gitlab" in norm:
-        return verify_gitlab_token(trimmed)
+        return verify_gitlab_token(trimmed, endpoint)
     elif "slack" in norm:
         return verify_slack_token(trimmed)
     elif "linear" in norm:

@@ -50,12 +50,18 @@ export default function ServerCard({ server, onDelete, onUpdate }: Props) {
 
   async function handleConnectToken(e: React.FormEvent) {
     e.preventDefault()
-    if (!patToken.trim()) return
+    // Strip leading/trailing whitespace, quotes, zero-width spaces, and any non-ASCII characters
+    const cleanToken = patToken
+      .replace(/[\u200B-\u200D\uFEFF]/g, '') // zero-width spaces
+      .replace(/[^\x20-\x7E]/g, '')         // strip non-printable or non-ASCII characters
+      .trim()
+      .replace(/^["']|["']$/g, '')          // strip accidental wrapping quotes
+    if (!cleanToken) return
 
     setConnecting(true)
     setConnectError('')
     try {
-      const res = await api.addConnection(server.name, patToken.trim())
+      const res = await api.addConnection(server.name, cleanToken)
       setConnectSuccess(true)
       setConnectMessage(res.message || 'Token verified and connected successfully!')
       setTimeout(() => {
@@ -113,8 +119,8 @@ export default function ServerCard({ server, onDelete, onUpdate }: Props) {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Connection Status Badge & Actions (Users only) */}
-          {!isAdmin && (
+          {/* Connection Status Badge & Actions */}
+          {(
             server.connected ? (
               <div className="flex items-center gap-1.5">
                 <span
@@ -180,7 +186,7 @@ export default function ServerCard({ server, onDelete, onUpdate }: Props) {
             {tag}
           </span>
         ))}
-        {!isAdmin && server.auth_type !== 'none' && (
+        {server.auth_type !== 'none' && (
           <a
             href={patInfo.url}
             target="_blank"
@@ -194,8 +200,8 @@ export default function ServerCard({ server, onDelete, onUpdate }: Props) {
         )}
       </div>
 
-      {/* Inline Connect PAT Panel for Users (not Admin) */}
-      {!isAdmin && showConnectForm && (
+      {/* Inline Connect PAT Panel */}
+      {showConnectForm && (
         <form onSubmit={handleConnectToken} className="mt-1 p-3 bg-gray-50 border border-gray-200 rounded-lg space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-semibold text-gray-800 flex items-center gap-1.5">
