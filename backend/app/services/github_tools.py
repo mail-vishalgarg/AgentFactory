@@ -74,8 +74,8 @@ def verify_slack_token(token: str) -> tuple[bool, str]:
     if is_garbage:
         return False, reason
 
-    if not trimmed.startswith(("xoxb-", "xoxp-", "xapp-", "xoxa-", "xoxr-")):
-        return False, "Invalid Slack token format: Slack tokens must start with 'xoxb-', 'xoxp-', or 'xapp-'."
+    if not (trimmed.startswith(("xoxb-", "xoxp-", "xapp-", "xoxa-", "xoxr-", "xoxe-")) or trimmed.startswith("xoxe.")):
+        return False, "Invalid Slack token format: Slack tokens must start with 'xoxb-', 'xoxp-', 'xapp-', or 'xoxe.'."
 
     try:
         resp = httpx.post(
