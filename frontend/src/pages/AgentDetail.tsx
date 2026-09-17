@@ -55,113 +55,329 @@ function effectivenessScore(agent: Agent): number {
 }
 
 function AgentGraph({ agent }: { agent: Agent }) {
+  const [activeView, setActiveView] = useState<'flowchart' | 'steps'>('flowchart')
+  const [selectedServer, setSelectedServer] = useState<string | null>(null)
   const groups = groupByServer(agent.config.tools)
-  const n = Math.max(groups.length, 1)
-  const H = Math.max(200, n * 72 + 80)
-  const W = 660
 
-  const msgW = 82, msgH = 36
-  const msgX = 20, msgY = H / 2 - msgH / 2
-
-  const agentW = 160, agentH = 70
-  const agentX = 170, agentY = H / 2 - agentH / 2
-
-  const toolW = 178, toolH = 52
-  const toolX = 420
-  const totalToolH = n * toolH + (n - 1) * 14
-  const toolStartY = H / 2 - totalToolH / 2
-
-  const agentCX = agentX + agentW / 2
-  const agentCY = agentY + agentH / 2
+  const readCount = agent.config.tools.filter((t) => t.permission_level === 'read').length
+  const writeCount = agent.config.tools.filter((t) => t.permission_level === 'write').length
+  const destructiveCount = agent.config.tools.filter((t) => t.permission_level === 'destructive').length
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" style={{ display: 'block' }}>
-      <defs>
-        <marker id="arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-          <path d="M0,0 L0,6 L8,3 z" fill="#94a3b8" />
-        </marker>
-        <marker id="arrowhead-loop" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-          <path d="M0,0 L0,6 L8,3 z" fill="#cbd5e1" />
-        </marker>
-      </defs>
+    <div className="space-y-4">
+      {/* Header and View Switcher */}
+      <div className="flex items-center justify-between border-b border-gray-150 pb-3">
+        <div>
+          <span className="text-xs font-semibold text-gray-700 uppercase tracking-wider">
+            Execution Flowchart & Architecture
+          </span>
+          <p className="text-[11px] text-gray-500 mt-0.5">
+            Dynamic execution graph showing LangGraph ReAct decision cycle and MCP server integrations
+          </p>
+        </div>
+        <div className="flex bg-gray-100 p-0.5 rounded-lg text-xs font-medium">
+          <button
+            type="button"
+            onClick={() => setActiveView('flowchart')}
+            className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
+              activeView === 'flowchart'
+                ? 'bg-white text-gray-900 shadow-xs font-semibold'
+                : 'text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            Visual Diagram
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveView('steps')}
+            className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
+              activeView === 'steps'
+                ? 'bg-white text-gray-900 shadow-xs font-semibold'
+                : 'text-gray-500 hover:text-gray-900'
+            }`}
+          >
+            Execution Steps
+          </button>
+        </div>
+      </div>
 
-      {/* message → agent */}
-      <line
-        x1={msgX + msgW} y1={msgY + msgH / 2}
-        x2={agentX - 4} y2={agentCY}
-        stroke="#94a3b8" strokeWidth="1.5" markerEnd="url(#arrowhead)"
-      />
+      {/* View 1: Descriptive Visual Flowchart */}
+      {activeView === 'flowchart' && (
+        <div className="space-y-4">
+          {/* Flow Stages Ribbon */}
+          <div className="grid grid-cols-4 gap-2 text-center text-xs">
+            <div className="p-2 bg-blue-50/60 border border-blue-200 rounded-lg">
+              <span className="font-semibold text-blue-700 block">1. Input Ingestion</span>
+              <span className="text-[10px] text-blue-600">User Prompt / REST API</span>
+            </div>
+            <div className="p-2 bg-emerald-50/60 border border-emerald-200 rounded-lg">
+              <span className="font-semibold text-emerald-800 block">2. ReAct Engine</span>
+              <span className="text-[10px] text-emerald-600">Think ➔ Act ➔ Observe</span>
+            </div>
+            <div className="p-2 bg-amber-50/60 border border-amber-200 rounded-lg">
+              <span className="font-semibold text-amber-800 block">3. MCP Server Layer</span>
+              <span className="text-[10px] text-amber-600">{groups.length} Connected Server{groups.length !== 1 ? 's' : ''}</span>
+            </div>
+            <div className="p-2 bg-purple-50/60 border border-purple-200 rounded-lg">
+              <span className="font-semibold text-purple-800 block">4. Final Synthesis</span>
+              <span className="text-[10px] text-purple-600">Synthesized Output</span>
+            </div>
+          </div>
 
-      {/* message box */}
-      <rect x={msgX} y={msgY} width={msgW} height={msgH} rx="6"
-        fill="white" stroke="#e2e8f0" strokeWidth="1.5" />
-      <text x={msgX + msgW / 2} y={msgY + msgH / 2 + 5}
-        textAnchor="middle" fontSize="12" fontWeight="600" fill="#374151">message</text>
+          {/* Main Diagram Area */}
+          <div className="relative bg-gradient-to-br from-gray-50/50 via-white to-gray-50/80 border border-gray-200 rounded-xl p-5 overflow-x-auto">
+            <div className="min-w-[620px] flex items-stretch gap-3 justify-between">
+              {/* NODE 1: User / Trigger */}
+              <div className="w-36 flex flex-col justify-center">
+                <div className="bg-white border-2 border-blue-200 rounded-xl p-3 shadow-xs hover:border-blue-300 transition-all">
+                  <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center text-sm mb-2 font-bold">
+                    💬
+                  </div>
+                  <h4 className="text-xs font-bold text-gray-900">User Request</h4>
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    Playground prompt or POST /invoke
+                  </p>
+                  <div className="mt-2 pt-2 border-t border-gray-100 flex items-center justify-between text-[10px]">
+                    <span className="text-gray-400">Payload</span>
+                    <span className="font-mono bg-gray-100 px-1 py-0.5 rounded text-gray-600 text-[9px]">
+                      message
+                    </span>
+                  </div>
+                </div>
+              </div>
 
-      {/* agent → tools + loop */}
-      {groups.map((g, i) => {
-        const ty = toolStartY + i * (toolH + 14)
-        const tcx = toolX + toolW / 2
-        const tcy = ty + toolH / 2
-        return (
-          <g key={g.server}>
-            <line
-              x1={agentX + agentW} y1={agentCY}
-              x2={toolX - 4} y2={tcy}
-              stroke="#94a3b8" strokeWidth="1.5" markerEnd="url(#arrowhead)"
-            />
-            <line
-              x1={tcx - toolW / 2} y1={tcy}
-              x2={agentX + agentW + 4} y2={agentCY}
-              stroke="#cbd5e1" strokeWidth="1" strokeDasharray="4,3"
-              markerEnd="url(#arrowhead-loop)"
-            />
-          </g>
-        )
-      })}
+              {/* ARROW 1: Trigger -> ReAct Agent */}
+              <div className="flex flex-col items-center justify-center px-1">
+                <span className="text-[10px] text-gray-400 font-medium mb-1">invokes</span>
+                <div className="w-7 h-0.5 bg-gray-300 relative">
+                  <div className="absolute right-0 -top-1 w-2 h-2 border-t-2 border-r-2 border-gray-400 rotate-45" />
+                </div>
+              </div>
 
-      {/* agent box */}
-      <rect x={agentX} y={agentY} width={agentW} height={agentH} rx="10"
-        fill="#f0fdf4" stroke="#2e9e7a" strokeWidth="2" />
-      <text x={agentCX} y={agentY + 24} textAnchor="middle"
-        fontSize="13" fontWeight="700" fill="#065f46">
-        {agent.name.length > 18 ? agent.name.slice(0, 18) + '…' : agent.name}
-      </text>
-      <text x={agentCX} y={agentY + 42} textAnchor="middle" fontSize="10" fill="#6b7280">
-        {agent.config.model.model_id}
-      </text>
-      <text x={agentCX} y={agentY + 57} textAnchor="middle" fontSize="10" fill="#6b7280">
-        ReAct agent
-      </text>
+              {/* NODE 2: LangGraph ReAct Orchestrator */}
+              <div className="w-56 flex flex-col justify-center">
+                <div className="bg-white border-2 border-[#2e9e7a] rounded-xl p-3.5 shadow-sm relative">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-emerald-100 text-emerald-800">
+                      ReAct Agent
+                    </span>
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  </div>
+                  <h4 className="text-xs font-bold text-gray-900 truncate" title={agent.name}>
+                    {agent.name}
+                  </h4>
+                  <p className="text-[10px] text-gray-500 font-mono mt-0.5">
+                    {agent.config.model.model_id}
+                  </p>
 
-      {/* tool boxes */}
-      {groups.map((g, i) => {
-        const ty = toolStartY + i * (toolH + 14)
-        const hasWrite = g.tools.some(
-          (t) => t.permission_level === 'write' || t.permission_level === 'destructive',
-        )
-        const toolNames = g.tools.map((t) => t.tool_name).join(', ')
-        const shortNames = toolNames.length > 24 ? toolNames.slice(0, 24) + '…' : toolNames
-        return (
-          <g key={g.server}>
-            <rect x={toolX} y={ty} width={toolW} height={toolH} rx="8"
-              fill="white"
-              stroke={hasWrite ? '#fcd34d' : '#e2e8f0'}
-              strokeWidth="1.5" />
-            <text x={toolX + toolW / 2} y={ty + 20} textAnchor="middle"
-              fontSize="12" fontWeight="700" fill="#374151">{g.server}</text>
-            <text x={toolX + toolW / 2} y={ty + 36} textAnchor="middle"
-              fontSize="10" fill="#9ca3af">{shortNames}</text>
-          </g>
-        )
-      })}
+                  {/* ReAct Loop Steps Container */}
+                  <div className="mt-2.5 p-2 bg-emerald-50/60 border border-emerald-150 rounded-lg space-y-1 text-[10px]">
+                    <div className="flex items-center gap-1.5 text-emerald-900 font-medium">
+                      <span className="w-3.5 h-3.5 rounded-full bg-emerald-200 text-emerald-800 flex items-center justify-center text-[9px] font-bold">
+                        1
+                      </span>
+                      <span>Think (Reasoning)</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-emerald-900 font-medium">
+                      <span className="w-3.5 h-3.5 rounded-full bg-emerald-200 text-emerald-800 flex items-center justify-center text-[9px] font-bold">
+                        2
+                      </span>
+                      <span>Act (Call MCP Tools)</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-emerald-900 font-medium">
+                      <span className="w-3.5 h-3.5 rounded-full bg-emerald-200 text-emerald-800 flex items-center justify-center text-[9px] font-bold">
+                        3
+                      </span>
+                      <span>Observe (Loop or Finish)</span>
+                    </div>
+                  </div>
 
-      {groups.length === 0 && (
-        <text x={W / 2} y={H / 2 + 5} textAnchor="middle" fontSize="12" fill="#9ca3af">
-          No tools configured
-        </text>
+                  <div className="mt-2 text-[9px] text-center text-gray-400 italic">
+                    ↺ Iterative ReAct Cycle
+                  </div>
+                </div>
+              </div>
+
+              {/* ARROW 2: Bidirectional Tool Call & Observation */}
+              <div className="flex flex-col items-center justify-center px-1">
+                <div className="text-[9px] text-amber-700 font-semibold mb-1 bg-amber-50 px-1 py-0.5 rounded border border-amber-200 whitespace-nowrap">
+                  tool_call ➔
+                </div>
+                <div className="w-8 h-0.5 bg-amber-400 relative mb-1.5" />
+                <div className="w-8 h-0.5 bg-blue-300 border-t border-dashed border-blue-400 relative" />
+                <div className="text-[9px] text-blue-700 font-semibold mt-1 bg-blue-50 px-1 py-0.5 rounded border border-blue-200 whitespace-nowrap">
+                  ↵ observation
+                </div>
+              </div>
+
+              {/* NODE 3: MCP Servers & Tools */}
+              <div className="flex-1 flex flex-col justify-center space-y-2 min-w-[210px]">
+                {groups.length === 0 ? (
+                  <div className="p-4 bg-gray-50 border border-dashed border-gray-300 rounded-xl text-center text-xs text-gray-400">
+                    No MCP tools configured
+                  </div>
+                ) : (
+                  groups.map((g) => {
+                    const hasWrite = g.tools.some((t) => t.permission_level === 'write')
+                    const hasDestructive = g.tools.some((t) => t.permission_level === 'destructive')
+                    const isExpanded = selectedServer === g.server
+
+                    return (
+                      <div
+                        key={g.server}
+                        className={`bg-white border rounded-xl p-2.5 transition-all ${
+                          hasDestructive
+                            ? 'border-red-200 shadow-xs'
+                            : hasWrite
+                            ? 'border-amber-200 shadow-xs'
+                            : 'border-gray-200 shadow-xs'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-[#2e9e7a]" />
+                            <span className="font-bold text-xs text-gray-900">{g.server}</span>
+                            <span className="text-[9px] text-gray-400 font-mono">
+                              (streamable-http)
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedServer(isExpanded ? null : g.server)}
+                            className="text-[10px] text-[#2e9e7a] hover:underline font-semibold cursor-pointer"
+                          >
+                            {isExpanded ? 'Hide tools ▲' : `${g.tools.length} tools ▼`}
+                          </button>
+                        </div>
+
+                        {/* Summary Badges */}
+                        <div className="flex items-center gap-1 mt-1.5">
+                          <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded text-[9px] font-medium">
+                            {g.tools.filter((t) => t.permission_level === 'read').length} read
+                          </span>
+                          {g.tools.filter((t) => t.permission_level === 'write').length > 0 && (
+                            <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[9px] font-medium">
+                              {g.tools.filter((t) => t.permission_level === 'write').length} write
+                            </span>
+                          )}
+                          {g.tools.filter((t) => t.permission_level === 'destructive').length > 0 && (
+                            <span className="px-1.5 py-0.5 bg-red-50 text-red-700 border border-red-200 rounded text-[9px] font-medium">
+                              {g.tools.filter((t) => t.permission_level === 'destructive').length} destructive
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Collapsible Tool List without truncation */}
+                        {isExpanded && (
+                          <div className="mt-2 pt-2 border-t border-gray-100 max-h-36 overflow-y-auto space-y-1">
+                            {g.tools.map((tool) => (
+                              <div
+                                key={tool.tool_name}
+                                className="flex items-center justify-between text-[10px] bg-gray-50 px-2 py-0.5 rounded font-mono text-gray-700"
+                              >
+                                <span className="truncate mr-2 font-medium">{tool.tool_name}</span>
+                                <span
+                                  className={`text-[8px] px-1 rounded font-sans uppercase font-semibold ${
+                                    tool.permission_level === 'destructive'
+                                      ? 'bg-red-100 text-red-700'
+                                      : tool.permission_level === 'write'
+                                      ? 'bg-amber-100 text-amber-700'
+                                      : 'bg-blue-100 text-blue-700'
+                                  }`}
+                                >
+                                  {tool.permission_level}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
-    </svg>
+
+      {/* View 2: Step-by-Step Descriptive Execution Trace */}
+      {activeView === 'steps' && (
+        <div className="space-y-2.5 bg-gray-50/50 p-4 border border-gray-200 rounded-xl">
+          <div className="flex gap-3 items-start bg-white p-3 rounded-lg border border-gray-200">
+            <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+              1
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-gray-900">Message Ingestion & Auth Verification</h4>
+              <p className="text-xs text-gray-600 mt-0.5 leading-relaxed">
+                When a user submits a prompt in the playground or triggers the REST endpoint (<code>POST /v1/agents/{agent.id}/invoke</code>),
+                the request payload is ingested and the user's active PAT connections for <strong>{groups.map((g) => g.server).join(', ') || 'configured servers'}</strong> are securely resolved.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-3 items-start bg-white p-3 rounded-lg border border-gray-200">
+            <div className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+              2
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-gray-900">LangGraph ReAct Reasoning Loop</h4>
+              <p className="text-xs text-gray-600 mt-0.5 leading-relaxed">
+                The agent instantiates <strong>{agent.config.model.model_id}</strong> (temperature <code>{agent.config.model.temperature}</code>).
+                The LLM evaluates the system instructions alongside the schemas of all <strong>{agent.config.tools.length} configured MCP tools</strong>,
+                determining if tools are required and formulating JSON argument parameters.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-3 items-start bg-white p-3 rounded-lg border border-gray-200">
+            <div className="w-6 h-6 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+              3
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-gray-900">Live MCP Server Protocol Execution</h4>
+              <p className="text-xs text-gray-600 mt-0.5 leading-relaxed">
+                LangGraph dispatches the selected tool call over the Model Context Protocol (MCP) streamable HTTP client using personal access tokens.
+                The server runs the remote task and returns the raw execution result.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-3 items-start bg-white p-3 rounded-lg border border-gray-200">
+            <div className="w-6 h-6 rounded-full bg-purple-100 text-purple-800 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+              4
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-gray-900">Observation & Final Response Delivery</h4>
+              <p className="text-xs text-gray-600 mt-0.5 leading-relaxed">
+                The tool's result is passed back to the LLM as an observation. If further actions are needed, it loops back; once satisfied, it synthesizes the final response back to the client.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Summary Footer bar */}
+      <div className="flex flex-wrap items-center justify-between text-xs text-gray-500 pt-2 border-t border-gray-150">
+        <div className="flex items-center gap-3">
+          <span>
+            Model: <strong className="text-gray-700 font-mono">{agent.config.model.model_id}</strong>
+          </span>
+          <span>•</span>
+          <span>
+            Servers: <strong className="text-gray-700">{groups.length}</strong>
+          </span>
+          <span>•</span>
+          <span>
+            Tools: <strong className="text-gray-700">{agent.config.tools.length}</strong> ({readCount} read, {writeCount} write, {destructiveCount} destructive)
+          </span>
+        </div>
+        <span className="text-[11px] text-gray-400">
+          Generated automatically from agent configuration
+        </span>
+      </div>
+    </div>
   )
 }
 
