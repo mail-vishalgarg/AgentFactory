@@ -1,7 +1,8 @@
-from typing import Any
+from typing import Any, Optional
 
 import httpx
-from langchain_core.tools import StructuredTool
+from langchain_core.tools import BaseTool, StructuredTool
+from pydantic import Field, create_model
 
 GITHUB_API = "https://api.github.com"
 SLACK_API = "https://slack.com/api"
@@ -577,10 +578,46 @@ def verify_pat_token(server_name: str, token: str, endpoint: str = "") -> tuple[
     return True, f"{server_name} token format accepted."
 
 
-def make_placeholder_tool(server_name: str, tool_name: str, description: str) -> StructuredTool:
+def make_placeholder_tool(
+    server_name: str,
+    tool_name: str,
+    description: str,
+    input_schema: dict[str, Any] | None = None,
+) -> BaseTool:
     name = f"{server_name}__{tool_name}"
+
+    # Build a typed Pydantic model from the JSON schema so the LLM knows what args to pass
+    args_schema = None
+    if input_schema and "properties" in input_schema:
+        props: dict[str, Any] = input_schema.get("properties", {})
+        required: set[str] = set(input_schema.get("required", []))
+        fields: dict[str, Any] = {}
+        for prop, spec in props.items():
+            json_type = spec.get("type", "string")
+            if json_type == "integer":
+                py_type: type = int
+            elif json_type == "number":
+                py_type = float
+            elif json_type == "boolean":
+                py_type = bool
+            elif json_type in ("array", "object"):
+                py_type = Any  # type: ignore[assignment]
+            else:
+                py_type = str
+            field_desc = spec.get("description", "")
+            if prop in required:
+                fields[prop] = (py_type, Field(..., description=field_desc))
+            else:
+                fields[prop] = (Optional[py_type], Field(None, description=field_desc))
+        if fields:
+            args_schema = create_model(f"{name}__args", **fields)
 
     def _run(**kwargs: Any) -> str:
         return f"[placeholder] {name} called with: {kwargs}"
 
-    return StructuredTool.from_function(func=_run, name=name, description=description)
+    return StructuredTool.from_function(
+        func=_run,
+        name=name,
+        description=description,
+        args_schema=args_schema,
+    )

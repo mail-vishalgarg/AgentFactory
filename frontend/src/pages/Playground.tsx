@@ -7,6 +7,12 @@ interface Message {
   content: string
 }
 
+interface PendingApproval {
+  thread_id: string
+  tool_name: string
+  tool_args: Record<string, unknown>
+}
+
 export default function Playground() {
   const { id } = useParams<{ id: string }>()
   const [agent, setAgent] = useState<Agent | null>(null)
@@ -14,6 +20,7 @@ export default function Playground() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [fetchError, setFetchError] = useState('')
+  const [pendingApproval, setPendingApproval] = useState<PendingApproval | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -23,7 +30,7 @@ export default function Playground() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, loading])
+  }, [messages, loading, pendingApproval])
 
   async function send() {
     if (!input.trim() || !id || loading) return
@@ -33,9 +40,44 @@ export default function Playground() {
     setLoading(true)
     try {
       const res = await api.runAgent(id, userMsg)
-      setMessages((prev) => [...prev, { role: 'assistant', content: res.output }])
+      if (res.status === 'pending_approval' && res.thread_id) {
+        setPendingApproval({
+          thread_id: res.thread_id,
+          tool_name: res.pending_tool_name ?? 'unknown',
+          tool_args: res.pending_tool_args ?? {},
+        })
+      } else {
+        setMessages((prev) => [...prev, { role: 'assistant', content: res.output }])
+      }
     } catch {
       setMessages((prev) => [...prev, { role: 'assistant', content: '⚠ Error running agent.' }])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleApproval(approved: boolean) {
+    if (!pendingApproval || !id) return
+    const { thread_id, tool_name } = pendingApproval
+    setLoading(true)
+    setPendingApproval(null)
+    setMessages((prev) => [
+      ...prev,
+      { role: 'user', content: approved ? `✓ Approved: ${tool_name}` : `✗ Rejected: ${tool_name}` },
+    ])
+    try {
+      const res = await api.resumeAgent(id, thread_id, approved)
+      if (res.status === 'pending_approval' && res.thread_id) {
+        setPendingApproval({
+          thread_id: res.thread_id,
+          tool_name: res.pending_tool_name ?? 'unknown',
+          tool_args: res.pending_tool_args ?? {},
+        })
+      } else {
+        setMessages((prev) => [...prev, { role: 'assistant', content: res.output }])
+      }
+    } catch {
+      setMessages((prev) => [...prev, { role: 'assistant', content: '⚠ Error resuming agent.' }])
     } finally {
       setLoading(false)
     }
@@ -104,7 +146,7 @@ export default function Playground() {
         </div>
 
         <div className="flex-1 overflow-auto p-6 space-y-4">
-          {messages.length === 0 && (
+          {messages.length === 0 && !pendingApproval && (
             <div className="text-center text-gray-300 text-sm mt-12">
               Send a message to test your agent.
             </div>
@@ -125,6 +167,47 @@ export default function Playground() {
               </div>
             </div>
           ))}
+
+          {/* Approval card */}
+          {pendingApproval && (
+            <div className="flex justify-start gap-3">
+              <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0" style={{ backgroundColor: '#2e9e7a' }}>F</div>
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl rounded-tl-sm p-4 max-w-lg space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-amber-600 font-bold text-base">⚠</span>
+                  <p className="text-sm font-semibold text-amber-800">Approval Required</p>
+                </div>
+                <p className="text-sm text-amber-700">
+                  The agent wants to run{' '}
+                  <code className="bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded text-xs font-mono">
+                    {pendingApproval.tool_name}
+                  </code>
+                </p>
+                {Object.keys(pendingApproval.tool_args).length > 0 && (
+                  <pre className="text-xs bg-white border border-amber-200 rounded-lg p-3 overflow-auto max-h-32 text-gray-700">
+                    {JSON.stringify(pendingApproval.tool_args, null, 2)}
+                  </pre>
+                )}
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleApproval(true)}
+                    disabled={loading}
+                    className="px-4 py-1.5 text-sm text-white rounded-lg font-medium bg-green-600 hover:bg-green-700 disabled:opacity-40"
+                  >
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => handleApproval(false)}
+                    disabled={loading}
+                    className="px-4 py-1.5 text-sm text-white rounded-lg font-medium bg-red-500 hover:bg-red-600 disabled:opacity-40"
+                  >
+                    Reject
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {loading && (
             <div className="flex gap-3 items-center">
               <div className="w-7 h-7 rounded-full flex items-center justify-center text-white text-xs font-bold" style={{ backgroundColor: '#2e9e7a' }}>F</div>
@@ -144,12 +227,13 @@ export default function Playground() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') send() }}
-              placeholder={`Ask ${agent.name} something…`}
-              className="flex-1 border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2e9e7a]"
+              placeholder={pendingApproval ? 'Approve or reject the pending tool call above…' : `Ask ${agent.name} something…`}
+              disabled={!!pendingApproval || loading}
+              className="flex-1 border border-gray-300 rounded-lg px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2e9e7a] disabled:bg-gray-50 disabled:text-gray-400"
             />
             <button
               onClick={send}
-              disabled={loading || !input.trim()}
+              disabled={loading || !input.trim() || !!pendingApproval}
               className="px-4 py-2 text-sm text-white rounded-lg font-medium disabled:opacity-40"
               style={{ backgroundColor: '#2e9e7a' }}
             >

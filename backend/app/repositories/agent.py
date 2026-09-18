@@ -44,6 +44,13 @@ async def get_agent_for_owner(db: AsyncSession, agent_id: uuid.UUID, owner_id: u
     return result.scalar_one_or_none()
 
 
+async def get_agent_by_name(db: AsyncSession, owner_id: uuid.UUID, name: str) -> Agent | None:
+    result = await db.execute(
+        select(Agent).where(Agent.owner_id == owner_id, Agent.name == name)
+    )
+    return result.scalar_one_or_none()
+
+
 async def list_agents(db: AsyncSession, owner_id: uuid.UUID) -> list[Agent]:
     result = await db.execute(
         select(Agent).where(Agent.owner_id == owner_id).order_by(Agent.created_at.desc())

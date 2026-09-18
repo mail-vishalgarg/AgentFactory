@@ -22,7 +22,7 @@ from app.schemas.agent import (
     AgentScoreResponse,
     PublishResponse,
 )
-from app.services.agent_builder import build_agent_config, execute_agent
+from app.services.agent_builder import build_agent_config, execute_agent, resume_agent as _resume_agent
 from app.services.github_tools import verify_pat_token
 from app.services.scoring import evaluate_publish_gate
 
@@ -35,6 +35,13 @@ async def create_agent(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> AgentResponse:
+    existing = await agent_repo.get_agent_by_name(db, user.id, request.name)
+    if existing:
+        raise HTTPException(
+            status_code=409,
+            detail=f"You already have an agent named '{request.name}'. Please choose a different name.",
+        )
+
     config = await build_agent_config(db, request)
     config_dict = config.model_dump(mode="json")
 
@@ -252,7 +259,7 @@ async def run_agent(
     config = AgentConfigSchema.model_validate(agent.config)
     start_time = time.monotonic()
     try:
-        output = await execute_agent(config, credentials=agent.credentials or {}, message=body.message)
+        result = await execute_agent(config, credentials=agent.credentials or {}, message=body.message)
     except Exception as exc:
         latency_ms = int((time.monotonic() - start_time) * 1000)
         cost_usd = latency_ms / 1000 * 0.004
@@ -264,15 +271,23 @@ async def run_agent(
 
     latency_ms = int((time.monotonic() - start_time) * 1000)
     cost_usd = latency_ms / 1000 * 0.004
+    run_status = "approval" if result.status == "pending_approval" else "ok"
     await run_repo.record_run(
-        db, agent_id, trigger="Playground", status="ok",
-        latency_ms=latency_ms, cost_usd=cost_usd, result=str(output)[:200],
+        db, agent_id, trigger="Playground", status=run_status,
+        latency_ms=latency_ms, cost_usd=cost_usd, result=result.output[:200],
     )
 
     server_names = list({t.mcp_server_name for t in config.tools})
     await agent_repo.touch_server_last_used(db, agent_id, server_names)
 
-    return AgentRunResponse(output=str(output), agent_id=str(agent_id))
+    return AgentRunResponse(
+        output=result.output,
+        agent_id=str(agent_id),
+        status=result.status,
+        thread_id=result.thread_id,
+        pending_tool_name=result.pending_tool_name,
+        pending_tool_args=result.pending_tool_args,
+    )
 
 
 @router.get("/{agent_id}/config")
@@ -360,6 +375,39 @@ async def revoke_agent_credential(
         del creds[k]
     agent.credentials = creds
     await db.commit()
+
+
+class ResumeRequest(BaseModel):
+    thread_id: str
+    approved: bool
+
+
+@router.post("/{agent_id}/resume", response_model=AgentRunResponse)
+async def resume_agent_run(
+    agent_id: uuid.UUID,
+    body: ResumeRequest,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> AgentRunResponse:
+    agent = await agent_repo.get_agent_for_owner(db, agent_id, user.id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    result = await _resume_agent(body.thread_id, body.approved)
+    action = "approved" if body.approved else "rejected"
+    run_status = "ok" if result.status != "pending_approval" else "approval"
+    await run_repo.record_run(
+        db, agent_id, trigger="Playground", status=run_status,
+        latency_ms=0, cost_usd=0.0, result=f"[{action}] {result.output[:180]}",
+    )
+    return AgentRunResponse(
+        output=result.output,
+        agent_id=str(agent_id),
+        status=result.status,
+        thread_id=result.thread_id,
+        pending_tool_name=result.pending_tool_name,
+        pending_tool_args=result.pending_tool_args,
+    )
 
 
 @router.post("/verify-token", response_model=VerifyTokenResponse)
@@ -469,8 +517,8 @@ async def evaluate_agent(
     probe_prompt = "Health probe: confirm your configured capabilities."
     start_time = time.monotonic()
     try:
-        raw_output = await execute_agent(config, credentials=agent.credentials or {}, message=probe_prompt)
-        diag_output = _format_agent_output(raw_output)
+        run_result = await execute_agent(config, credentials=agent.credentials or {}, message=probe_prompt)
+        diag_output = _format_agent_output(run_result.output)
         latency_ms = int((time.monotonic() - start_time) * 1000)
         dim4_score = 20 if latency_ms < 2500 else (17 if latency_ms < 5000 else 14)
         dim4_status = "passed"

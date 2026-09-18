@@ -261,13 +261,13 @@ export default function MyAgents() {
             </div>
 
             <div className="flex flex-wrap gap-1">
-              {agent.config.tools.slice(0, 3).map((t) => (
+              {agent.config.tools.slice(0, 4).map((t) => (
                 <span key={`${t.mcp_server_name}.${t.tool_name}`} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-mono">
-                  {t.mcp_server_name}.{t.tool_name}
+                  {t.tool_name}
                 </span>
               ))}
-              {agent.config.tools.length > 3 && (
-                <span className="text-xs text-gray-400">+{agent.config.tools.length - 3} more</span>
+              {agent.config.tools.length > 4 && (
+                <span className="text-xs text-gray-400 self-center">+{agent.config.tools.length - 4} more</span>
               )}
             </div>
 

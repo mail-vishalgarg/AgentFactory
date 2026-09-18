@@ -604,6 +604,9 @@ export default function AgentDetail() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
+  const [pendingApproval, setPendingApproval] = useState<{
+    thread_id: string; tool_name: string; tool_args: Record<string, unknown>
+  } | null>(null)
   const [evaluating, setEvaluating] = useState(false)
   const [evalResult, setEvalResult] = useState<AgentEvaluation | null>(null)
   const [evalError, setEvalError] = useState('')
@@ -655,7 +658,7 @@ export default function AgentDetail() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, sending])
+  }, [messages, sending, pendingApproval])
 
   async function send(customPrompt?: string) {
     const textToSend = (customPrompt || input).trim()
@@ -672,12 +675,20 @@ export default function AgentDetail() {
     try {
       const res = await api.runAgent(id, textToSend)
       const durationMs = Date.now() - startTime
-      setMessages((prev) => [...prev, {
-        role: 'assistant',
-        content: res.output,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        latencyMs: durationMs
-      }])
+      if (res.status === 'pending_approval' && res.thread_id) {
+        setPendingApproval({
+          thread_id: res.thread_id,
+          tool_name: res.pending_tool_name ?? 'unknown',
+          tool_args: res.pending_tool_args ?? {},
+        })
+      } else {
+        setMessages((prev) => [...prev, {
+          role: 'assistant',
+          content: res.output,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          latencyMs: durationMs
+        }])
+      }
       api.listRuns(id).then(setRuns)
     } catch (err: unknown) {
       const durationMs = Date.now() - startTime
@@ -689,6 +700,43 @@ export default function AgentDetail() {
         latencyMs: durationMs
       }])
       api.listRuns(id).then(setRuns)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  async function handleApproval(approved: boolean) {
+    if (!pendingApproval || !id) return
+    const { thread_id, tool_name } = pendingApproval
+    setSending(true)
+    setPendingApproval(null)
+    setMessages((prev) => [...prev, {
+      role: 'user',
+      content: approved ? `✓ Approved: ${tool_name}` : `✗ Rejected: ${tool_name}`,
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    }])
+    try {
+      const res = await api.resumeAgent(id, thread_id, approved)
+      if (res.status === 'pending_approval' && res.thread_id) {
+        setPendingApproval({
+          thread_id: res.thread_id,
+          tool_name: res.pending_tool_name ?? 'unknown',
+          tool_args: res.pending_tool_args ?? {},
+        })
+      } else {
+        setMessages((prev) => [...prev, {
+          role: 'assistant',
+          content: res.output,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        }])
+      }
+      api.listRuns(id).then(setRuns)
+    } catch {
+      setMessages((prev) => [...prev, {
+        role: 'assistant',
+        content: '⚠ Error resuming agent.',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      }])
     } finally {
       setSending(false)
     }
@@ -1309,6 +1357,46 @@ export default function AgentDetail() {
                 </div>
               ))}
 
+              {/* Approval card */}
+              {pendingApproval && (
+                <div className="flex justify-start gap-3">
+                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0 shadow-sm mt-0.5" style={{ backgroundColor: '#2e9e7a' }}>A</div>
+                  <div className="bg-amber-50 border border-amber-200 rounded-2xl rounded-tl-sm p-4 max-w-lg space-y-3 shadow-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="text-amber-600 font-bold text-base">⚠</span>
+                      <p className="text-sm font-semibold text-amber-800">Approval Required</p>
+                    </div>
+                    <p className="text-sm text-amber-700">
+                      The agent wants to run{' '}
+                      <code className="bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded text-xs font-mono">
+                        {pendingApproval.tool_name}
+                      </code>
+                    </p>
+                    {Object.keys(pendingApproval.tool_args).length > 0 && (
+                      <pre className="text-xs bg-white border border-amber-200 rounded-lg p-3 overflow-auto max-h-32 text-gray-700">
+                        {JSON.stringify(pendingApproval.tool_args, null, 2)}
+                      </pre>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => handleApproval(true)}
+                        disabled={sending}
+                        className="px-4 py-1.5 text-sm text-white rounded-lg font-medium bg-green-600 hover:bg-green-700 disabled:opacity-40"
+                      >
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => handleApproval(false)}
+                        disabled={sending}
+                        className="px-4 py-1.5 text-sm text-white rounded-lg font-medium bg-red-500 hover:bg-red-600 disabled:opacity-40"
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {sending && (
                 <div className="flex gap-3 items-start">
                   <div
@@ -1349,13 +1437,13 @@ export default function AgentDetail() {
                       send()
                     }
                   }}
-                  placeholder={`Ask ${agent.name} something or test tool execution…`}
-                  disabled={sending}
-                  className="flex-1 border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#2e9e7a] focus:border-transparent transition"
+                  placeholder={pendingApproval ? 'Approve or reject the pending tool call above…' : `Ask ${agent.name} something or test tool execution…`}
+                  disabled={sending || !!pendingApproval}
+                  className="flex-1 border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#2e9e7a] focus:border-transparent transition disabled:bg-gray-50 disabled:text-gray-400"
                 />
                 <button
                   onClick={() => send()}
-                  disabled={sending || !input.trim()}
+                  disabled={sending || !input.trim() || !!pendingApproval}
                   className="px-5 py-2.5 text-sm text-white rounded-xl font-medium disabled:opacity-40 transition flex items-center gap-1.5 shadow-sm"
                   style={{ backgroundColor: '#2e9e7a' }}
                 >

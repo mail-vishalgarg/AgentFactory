@@ -46,6 +46,7 @@ export default function AgentBuilder() {
   const [builtAgent, setBuiltAgent] = useState<Agent | null>(null)
   const [error, setError] = useState('')
   const [showToolsDropdown, setShowToolsDropdown] = useState(false)
+  const [modelId, setModelId] = useState('gemini-2.0-flash')
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -162,7 +163,7 @@ export default function AgentBuilder() {
         name,
         description: prompt,
         system_prompt: `You are a helpful assistant. ${prompt}`,
-        model_id: 'gemini-2.0-flash',
+        model_id: modelId,
         temperature: 0.0,
         tool_ids: toolIds,
         user_prompt: prompt,
@@ -215,13 +216,31 @@ export default function AgentBuilder() {
               />
               <div className="flex items-center justify-between mt-2">
                 <span className="text-xs text-gray-400">Press Enter or click Send.</span>
-                <button
-                  onClick={handleSend}
-                  className="px-4 py-2 text-sm text-white rounded-md font-medium"
-                  style={{ backgroundColor: '#2e9e7a' }}
-                >
-                  Send
-                </button>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={modelId}
+                    onChange={(e) => setModelId(e.target.value)}
+                    className="text-xs border border-gray-300 rounded-md px-2 py-1.5 text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2e9e7a]"
+                  >
+                    <optgroup label="Gemini">
+                      <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                      <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                      <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                    </optgroup>
+                    <optgroup label="OpenAI">
+                      <option value="gpt-4o-mini">gpt-4o-mini</option>
+                      <option value="gpt-4o">gpt-4o</option>
+                      <option value="gpt-4-turbo">gpt-4-turbo</option>
+                    </optgroup>
+                  </select>
+                  <button
+                    onClick={handleSend}
+                    className="px-4 py-2 text-sm text-white rounded-md font-medium"
+                    style={{ backgroundColor: '#2e9e7a' }}
+                  >
+                    Send
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -420,7 +439,7 @@ export default function AgentBuilder() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                   </svg>
-                  Building and deploying…
+                  Building and deploying with <span className="font-mono font-medium text-gray-800">{modelId}</span>…
                 </div>
               </div>
             )}
@@ -447,6 +466,10 @@ export default function AgentBuilder() {
                         <span className="text-gray-400">Score</span>
                         <span className="ml-2 text-gray-400 italic">not tested yet</span>
                         <span className="ml-1 inline-flex items-center justify-center w-5 h-5 rounded-full bg-orange-100 text-orange-600 font-bold text-xs">C</span>
+                      </div>
+                      <div className="col-span-2">
+                        <span className="text-gray-400">Model</span>
+                        <span className="ml-2 font-mono font-medium text-gray-800">{builtAgent.config.model.model_id}</span>
                       </div>
                     </div>
                     <div>

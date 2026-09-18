@@ -150,6 +150,15 @@ export interface MarketplaceTool {
   requires_approval: boolean
 }
 
+export interface AgentRunResponse {
+  output: string
+  agent_id: string
+  status: 'ok' | 'pending_approval'
+  thread_id?: string
+  pending_tool_name?: string
+  pending_tool_args?: Record<string, unknown>
+}
+
 export interface MarketplaceListing {
   id: string
   name: string
@@ -277,9 +286,14 @@ export const api = {
   getAgent: (id: string) => req<Agent>(`/agents/${id}`),
   deleteAgent: (id: string) => req<void>(`/agents/${id}`, { method: 'DELETE' }),
   runAgent: (id: string, message: string) =>
-    req<{ output: string; agent_id: string }>(`/agents/${id}/run`, {
+    req<AgentRunResponse>(`/agents/${id}/run`, {
       method: 'POST',
       body: JSON.stringify({ message }),
+    }),
+  resumeAgent: (id: string, thread_id: string, approved: boolean) =>
+    req<AgentRunResponse>(`/agents/${id}/resume`, {
+      method: 'POST',
+      body: JSON.stringify({ thread_id, approved }),
     }),
   evaluateAgent: (agentId: string) =>
     req<AgentEvaluation>(`/agents/${agentId}/evaluate`, { method: 'POST' }),

@@ -90,3 +90,7 @@ class AgentRunRequest(BaseModel):
 class AgentRunResponse(BaseModel):
     output: str
     agent_id: str
+    status: str = "ok"
+    thread_id: str | None = None
+    pending_tool_name: str | None = None
+    pending_tool_args: dict[str, Any] | None = None
