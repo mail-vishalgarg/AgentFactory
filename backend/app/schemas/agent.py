@@ -67,6 +67,34 @@ class AgentResponse(BaseModel):
     last_run_at: datetime | None = None
 
 
+class ScoreBreakdownResponse(BaseModel):
+    reliability: int
+    reliability_max: int = 40
+    scope: int
+    scope_max: int = 30
+    coverage: int
+    coverage_max: int = 15
+    completeness: int
+    completeness_max: int = 15
+    run_count: int
+    ok_count: int
+    tool_count: int
+
+
+class GovernanceBreakdownResponse(BaseModel):
+    grade: str
+    read_only_count: int
+    total_tools: int
+    read_only_ratio: float
+    capped_for_destructive_scope: bool
+
+
+class ChecklistItemResponse(BaseModel):
+    label: str
+    ok: bool
+    detail: str
+
+
 class AgentScoreResponse(BaseModel):
     score: int
     score_ok: bool
@@ -78,6 +106,9 @@ class AgentScoreResponse(BaseModel):
     publish_status: str | None
     review_notes: str | None = None
     reviewed_at: datetime | None = None
+    breakdown: ScoreBreakdownResponse
+    governance_detail: GovernanceBreakdownResponse
+    checklist: list[ChecklistItemResponse] = []
 
 
 class PublishResponse(BaseModel):

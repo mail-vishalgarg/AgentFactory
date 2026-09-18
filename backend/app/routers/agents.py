@@ -13,6 +13,7 @@ from app.models.user import User
 from app.repositories import agent as agent_repo
 from app.repositories import agent_run as run_repo
 from app.repositories import connection as conn_repo
+from app.repositories import mcp as mcp_repo
 from app.repositories import publish_review as publish_review_repo
 from app.schemas.agent import (
     AgentConfigSchema,
@@ -21,12 +22,15 @@ from app.schemas.agent import (
     AgentRunRequest,
     AgentRunResponse,
     AgentScoreResponse,
+    ChecklistItemResponse,
+    GovernanceBreakdownResponse,
     PublishResponse,
+    ScoreBreakdownResponse,
 )
 from app.services.agent_builder import build_agent_config, execute_agent, resume_agent as _resume_agent
 from app.services.github_tools import verify_pat_token
 from app.services.publish_graph import get_publish_graph
-from app.services.scoring import evaluate_publish_gate
+from app.services.scoring import build_trust_checklist, evaluate_publish_gate
 
 router = APIRouter()
 
@@ -189,6 +193,16 @@ async def get_agent_score(
     gate = evaluate_publish_gate(config, run_count, ok_count)
     review = await publish_review_repo.get_latest_review_for_agent(db, agent_id)
 
+    server_statuses: dict[str, str] = {}
+    for server_id in {t.mcp_server_id for t in config.tools}:
+        try:
+            server = await mcp_repo.get_server_with_tools(db, uuid.UUID(server_id))
+        except ValueError:
+            server = None
+        server_statuses[server_id] = server.status if server else "dead"
+
+    checklist = build_trust_checklist(config, agent.credentials or {}, server_statuses, run_count)
+
     return AgentScoreResponse(
         score=gate.score,
         score_ok=gate.score_ok,
@@ -200,6 +214,23 @@ async def get_agent_score(
         publish_status=review.status if review else None,
         review_notes=review.review_notes if review else None,
         reviewed_at=review.decided_at if review else None,
+        breakdown=ScoreBreakdownResponse(
+            reliability=gate.breakdown.reliability,
+            scope=gate.breakdown.scope,
+            coverage=gate.breakdown.coverage,
+            completeness=gate.breakdown.completeness,
+            run_count=gate.run_count,
+            ok_count=gate.ok_count,
+            tool_count=len(config.tools),
+        ),
+        governance_detail=GovernanceBreakdownResponse(
+            grade=gate.governance_detail.grade,
+            read_only_count=gate.governance_detail.read_only_count,
+            total_tools=gate.governance_detail.total_tools,
+            read_only_ratio=gate.governance_detail.read_only_ratio,
+            capped_for_destructive_scope=gate.governance_detail.capped_for_destructive_scope,
+        ),
+        checklist=[ChecklistItemResponse(label=c.label, ok=c.ok, detail=c.detail) for c in checklist],
     )
 
 
@@ -494,87 +525,72 @@ async def evaluate_agent(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> AgentEvaluationResponse:
-    """Run an automated evaluation suite against the agent and persist the generated scorecard."""
+    """Runs the same publish-gate scoring used by /score, plus a live health
+    probe. Kept in sync with GET /{agent_id}/score on purpose: this and the
+    Settings tab must always show the same score and governance grade for
+    the same agent."""
     agent = await agent_repo.get_agent_for_owner(db, agent_id, user.id)
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
 
     config = AgentConfigSchema.model_validate(agent.config)
+    run_count, ok_count = await run_repo.get_run_stats(db, agent_id)
+    gate = evaluate_publish_gate(config, run_count, ok_count)
+    b = gate.breakdown
 
-    # 1. Tool Schema & Parameter Validation (max 30 pts)
-    tools_count = len(config.tools)
-    server_count = len({t.mcp_server_name for t in config.tools})
-    dim1_score = min(30, 15 + min(15, tools_count * 2))
-    dim1 = EvaluationDimension(
-        name="Tool Schema & Parameter Integrity",
-        score=dim1_score,
-        max_score=30,
-        status="passed" if dim1_score >= 20 else "warning",
-        details=f"Verified {tools_count} MCP tool schemas across {server_count} active server(s).",
-    )
+    dimensions = [
+        EvaluationDimension(
+            name="Reliability",
+            score=b.reliability,
+            max_score=40,
+            status="passed" if b.reliability >= 28 else "warning",
+            details=(
+                "No runs yet." if run_count == 0
+                else f"{ok_count}/{run_count} run(s) succeeded"
+                + (" — scaled down for a small sample (full credit needs 5+ runs)." if run_count < 5 else ".")
+            ),
+        ),
+        EvaluationDimension(
+            name="Scope",
+            score=b.scope,
+            max_score=30,
+            status="passed" if b.scope >= 15 else "warning",
+            details=f"{len(config.tools)} tool(s) attached — fewer tools scores higher, and write/destructive tools cost more than read-only ones.",
+        ),
+        EvaluationDimension(
+            name="Coverage",
+            score=b.coverage,
+            max_score=15,
+            status="passed" if b.coverage >= 10 else "warning",
+            details=(
+                "No runs yet." if run_count == 0
+                else f"Weighted by the {round(ok_count / run_count * 100)}% of runs that actually succeeded."
+            ),
+        ),
+        EvaluationDimension(
+            name="Completeness",
+            score=b.completeness,
+            max_score=15,
+            status="passed" if b.completeness >= 10 else "warning",
+            details="Description, system prompt, and having at least one tool — 5 points each.",
+        ),
+    ]
 
-    # 2. System Prompt & Instruction Scope (max 30 pts)
-    prompt_len = len(config.system_prompt or "")
-    dim2_score = 30 if prompt_len > 40 else (24 if prompt_len > 15 else 18)
-    dim2 = EvaluationDimension(
-        name="ReAct Instruction Scope & Goal Clarity",
-        score=dim2_score,
-        max_score=30,
-        status="passed" if dim2_score >= 24 else "warning",
-        details="System instructions establish role definition, task boundaries, and execution constraints.",
-    )
-
-    # 3. Security, Permissions & Credential Isolation (max 20 pts)
-    has_destructive = any(t.permission_level == "destructive" for t in config.tools)
-    has_write = any(t.permission_level == "write" for t in config.tools)
-    if has_destructive:
-        safety_grade = "C"
-        dim3_score = 13
-        sec_details = "Destructive tools detected; requires user confirmation policies."
-    elif has_write:
-        safety_grade = "B"
-        dim3_score = 17
-        sec_details = "Write-capable tools configured with standard authenticated scoping."
-    else:
-        safety_grade = "A"
-        dim3_score = 20
-        sec_details = "Read-only tools configured; highest safety tier."
-
-    dim3 = EvaluationDimension(
-        name="Security & Credential Isolation",
-        score=dim3_score,
-        max_score=20,
-        status="passed" if dim3_score >= 16 else "warning",
-        details=sec_details,
-    )
-
-    # 4. Live Execution Benchmark & Latency (max 20 pts)
+    # Live health probe — informational only; it does NOT feed the score,
+    # so a flaky live call can never make this disagree with /score.
     probe_prompt = "Health probe: confirm your configured capabilities."
     start_time = time.monotonic()
     try:
         run_result = await execute_agent(config, credentials=agent.credentials or {}, message=probe_prompt)
         diag_output = _format_agent_output(run_result.output)
         latency_ms = int((time.monotonic() - start_time) * 1000)
-        dim4_score = 20 if latency_ms < 2500 else (17 if latency_ms < 5000 else 14)
-        dim4_status = "passed"
-        dim4_details = f"ReAct diagnostic cycle succeeded with {latency_ms}ms round-trip latency."
     except Exception as exc:
         latency_ms = int((time.monotonic() - start_time) * 1000)
-        dim4_score = 12
-        dim4_status = "warning"
-        dim4_details = f"Diagnostic probe completed ({str(exc)[:60]})."
-        diag_output = "Agent executed successfully with configured tools."
+        diag_output = f"Live probe failed: {str(exc)[:200]}"
 
-    dim4 = EvaluationDimension(
-        name="Execution Latency & Protocol Health",
-        score=dim4_score,
-        max_score=20,
-        status=dim4_status,
-        details=dim4_details,
-    )
-
-    overall_score = dim1.score + dim2.score + dim3.score + dim4.score
-    benchmark_status = "Production Ready" if overall_score >= 85 else "Development Grade"
+    overall_score = gate.score
+    safety_grade = gate.governance
+    benchmark_status = "Production Ready" if gate.can_publish else "Development Grade"
     now_iso = datetime.now(timezone.utc).isoformat()
 
     eval_data = {
@@ -583,7 +599,7 @@ async def evaluate_agent(
         "benchmark_status": benchmark_status,
         "evaluated_at": now_iso,
         "latency_ms": latency_ms,
-        "dimensions": [d.model_dump() for d in [dim1, dim2, dim3, dim4]],
+        "dimensions": [d.model_dump() for d in dimensions],
     }
 
     # Persist in agent metadata
@@ -602,6 +618,6 @@ async def evaluate_agent(
         benchmark_status=benchmark_status,
         evaluated_at=now_iso,
         latency_ms=latency_ms,
-        dimensions=[dim1, dim2, dim3, dim4],
+        dimensions=dimensions,
         diagnostic_output=diag_output,
     )

@@ -172,6 +172,34 @@ export interface MarketplaceListing {
   submitted_at: string
 }
 
+export interface ScoreBreakdown {
+  reliability: number
+  reliability_max: number
+  scope: number
+  scope_max: number
+  coverage: number
+  coverage_max: number
+  completeness: number
+  completeness_max: number
+  run_count: number
+  ok_count: number
+  tool_count: number
+}
+
+export interface GovernanceBreakdown {
+  grade: string
+  read_only_count: number
+  total_tools: number
+  read_only_ratio: number
+  capped_for_destructive_scope: boolean
+}
+
+export interface ChecklistItem {
+  label: string
+  ok: boolean
+  detail: string
+}
+
 export interface AgentScore {
   score: number
   score_ok: boolean
@@ -183,6 +211,9 @@ export interface AgentScore {
   publish_status: string | null
   review_notes: string | null
   reviewed_at: string | null
+  breakdown: ScoreBreakdown
+  governance_detail: GovernanceBreakdown
+  checklist: ChecklistItem[]
 }
 
 export interface PendingListing {

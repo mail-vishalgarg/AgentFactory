@@ -42,21 +42,6 @@ function groupByServer(tools: AgentConfig['tools']) {
   return Array.from(map.entries()).map(([server, ts]) => ({ server, tools: ts }))
 }
 
-function safetyGrade(tools: AgentConfig['tools']): string {
-  if (tools.some((t) => t.permission_level === 'destructive')) return 'C'
-  if (tools.some((t) => t.permission_level === 'write')) return 'B'
-  return 'A'
-}
-
-function effectivenessScore(agent: Agent): number {
-  let score = 50
-  if (agent.config.tools.length > 0) score += 20
-  if (agent.config.system_prompt && agent.config.system_prompt.length > 30) score += 15
-  const servers = new Set(agent.config.tools.map((t) => t.mcp_server_name)).size
-  score += Math.min(servers * 5, 15)
-  return Math.min(score, 100)
-}
-
 function AgentGraph({ agent }: { agent: Agent }) {
   const [activeView, setActiveView] = useState<'flowchart' | 'steps'>('flowchart')
   const [selectedServer, setSelectedServer] = useState<string | null>(null)
@@ -475,16 +460,16 @@ function ApiTab({ agent }: { agent: Agent }) {
   )
 }
 
-function SettingsTab({ agent }: { agent: Agent }) {
-  const [scoreData, setScoreData] = useState<AgentScore | null>(null)
-  const [loading, setLoading] = useState(true)
+interface SettingsTabProps {
+  agent: Agent
+  scoreData: AgentScore | null
+  loading: boolean
+  onScoreChange: (score: AgentScore) => void
+}
+
+function SettingsTab({ agent, scoreData, loading, onScoreChange }: SettingsTabProps) {
   const [publishing, setPublishing] = useState(false)
   const [publishError, setPublishError] = useState('')
-
-  useEffect(() => {
-    setLoading(true)
-    api.getAgentScore(agent.id).then(setScoreData).finally(() => setLoading(false))
-  }, [agent.id])
 
   async function handlePublish() {
     setPublishing(true)
@@ -492,7 +477,7 @@ function SettingsTab({ agent }: { agent: Agent }) {
     try {
       await api.publishAgent(agent.id)
       const updated = await api.getAgentScore(agent.id)
-      setScoreData(updated)
+      onScoreChange(updated)
     } catch (e) {
       setPublishError(e instanceof Error ? e.message : 'Publish failed')
     } finally {
@@ -611,6 +596,118 @@ function SettingsTab({ agent }: { agent: Agent }) {
             {publishError && <p className="text-xs text-red-600 mt-2">{publishError}</p>}
           </div>
         </div>
+
+        <ScoreBreakdownPanel scoreData={scoreData} />
+      </div>
+    </div>
+  )
+}
+
+function ScoreBreakdownPanel({ scoreData }: { scoreData: AgentScore }) {
+  const b = scoreData.breakdown
+  const g = scoreData.governance_detail
+
+  const rows = [
+    {
+      label: 'Reliability',
+      value: b.reliability,
+      max: b.reliability_max,
+      detail:
+        b.run_count === 0
+          ? 'No runs yet.'
+          : `${b.ok_count}/${b.run_count} run${b.run_count === 1 ? '' : 's'} succeeded${
+              b.run_count < 5 ? ` — scaled down for a small sample (full credit needs 5+ runs)` : ''
+            }.`,
+    },
+    {
+      label: 'Scope',
+      value: b.scope,
+      max: b.scope_max,
+      detail: `${b.tool_count} tool${b.tool_count === 1 ? '' : 's'} attached — fewer tools scores higher, and write/destructive tools cost more than read-only ones.`,
+    },
+    {
+      label: 'Coverage',
+      value: b.coverage,
+      max: b.coverage_max,
+      detail:
+        b.run_count === 0
+          ? 'No runs yet.'
+          : `Weighted by the ${Math.round((b.ok_count / b.run_count) * 100)}% of runs that actually succeeded, not just the attempt count.`,
+    },
+    {
+      label: 'Completeness',
+      value: b.completeness,
+      max: b.completeness_max,
+      detail: 'Description, system prompt, and having at least one tool — 5 points each.',
+    },
+  ]
+
+  return (
+    <div>
+      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">How this score was calculated</p>
+      <div className="border border-gray-200 rounded-lg bg-white px-4 py-4 space-y-4">
+        <div>
+          <div className="flex items-baseline justify-between mb-1">
+            <span className="text-sm font-medium text-gray-900">Total score</span>
+            <span className="text-sm font-mono text-gray-900">{scoreData.score} / 100</span>
+          </div>
+          <div className="h-1.5 rounded-full bg-gray-100 overflow-hidden">
+            <div
+              className="h-full rounded-full"
+              style={{ width: `${Math.max(0, Math.min(100, scoreData.score))}%`, backgroundColor: '#2e9e7a' }}
+            />
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {rows.map((r) => {
+            const pct = Math.max(0, Math.min(100, (r.value / r.max) * 100))
+            return (
+              <div key={r.label}>
+                <div className="flex items-baseline justify-between text-xs mb-1">
+                  <span className="font-medium text-gray-700">{r.label}</span>
+                  <span className="font-mono text-gray-500">
+                    {r.value} / {r.max}
+                  </span>
+                </div>
+                <div className="h-1 rounded-full bg-gray-100 overflow-hidden mb-1">
+                  <div
+                    className={`h-full rounded-full ${r.value < 0 ? 'bg-red-400' : 'bg-gray-400'}`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <p className="text-xs text-gray-400">{r.detail}</p>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="pt-3 border-t border-gray-100">
+          <div className="flex items-baseline justify-between text-xs mb-1">
+            <span className="font-medium text-gray-700">Governance grade</span>
+            <span className="font-mono text-gray-500">{g.grade}</span>
+          </div>
+          <p className="text-xs text-gray-400">
+            {g.total_tools === 0
+              ? 'No tools — defaults to A.'
+              : `${g.read_only_count}/${g.total_tools} tools are read-only (${Math.round(g.read_only_ratio * 100)}%).`}
+            {g.capped_for_destructive_scope &&
+              ' Capped at C: a destructive tool combined with more than 10 tools total.'}
+          </p>
+        </div>
+
+        {scoreData.checklist.length > 0 && (
+          <div className="pt-3 border-t border-gray-100 space-y-1.5">
+            {scoreData.checklist.map((c) => (
+              <div key={c.label} className="flex items-start gap-2 text-xs" title={c.detail}>
+                <span className={`mt-0.5 flex-shrink-0 font-bold ${c.ok ? 'text-[#2e9e7a]' : 'text-red-500'}`}>
+                  {c.ok ? '✓' : '✕'}
+                </span>
+                <span className="text-gray-600">{c.label}</span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -651,6 +748,16 @@ export default function AgentDetail() {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
 
+  // Score + governance: the single source of truth shared by Overview,
+  // Playground, and Settings, so all three tabs always agree.
+  const [scoreData, setScoreData] = useState<AgentScore | null>(null)
+  const [scoreLoading, setScoreLoading] = useState(true)
+
+  function refreshScore() {
+    if (!id) return
+    api.getAgentScore(id).then(setScoreData).catch(() => {})
+  }
+
   useEffect(() => {
     if (!id) return
     api.getAgent(id).then((loaded) => {
@@ -659,6 +766,8 @@ export default function AgentDetail() {
         setEvalResult(loaded.config.metadata.evaluation)
       }
     }).catch(() => setFetchError('Agent not found.'))
+    setScoreLoading(true)
+    api.getAgentScore(id).then(setScoreData).finally(() => setScoreLoading(false))
   }, [id])
 
   // Auto-check credentials once agent loads
@@ -728,6 +837,7 @@ export default function AgentDetail() {
         }])
       }
       api.listRuns(id).then(setRuns)
+      refreshScore()
     } catch (err: unknown) {
       const durationMs = Date.now() - startTime
       const errorText = err instanceof Error ? err.message : 'Error running agent invocation.'
@@ -738,6 +848,7 @@ export default function AgentDetail() {
         latencyMs: durationMs
       }])
       api.listRuns(id).then(setRuns)
+      refreshScore()
     } finally {
       setSending(false)
     }
@@ -769,6 +880,7 @@ export default function AgentDetail() {
         }])
       }
       api.listRuns(id).then(setRuns)
+      refreshScore()
     } catch {
       setMessages((prev) => [...prev, {
         role: 'assistant',
@@ -790,6 +902,7 @@ export default function AgentDetail() {
       // Refresh agent to sync updated metadata & status
       const updatedAgent = await api.getAgent(id)
       setAgent(updatedAgent)
+      refreshScore()
     } catch (err: unknown) {
       setEvalError(err instanceof Error ? err.message : 'Evaluation probe encountered an unexpected error.')
     } finally {
@@ -806,8 +919,6 @@ export default function AgentDetail() {
   if (fetchError) return <div className="p-8 text-red-500">{fetchError}</div>
   if (!agent) return <div className="p-8 text-sm text-gray-400">Loading…</div>
 
-  const score = effectivenessScore(agent)
-  const grade = safetyGrade(agent.config.tools)
   const groups = groupByServer(agent.config.tools)
 
   const checks = [
@@ -939,27 +1050,27 @@ export default function AgentDetail() {
                   <div className="flex items-end justify-between mb-4">
                     <div>
                       <p className="text-xs text-gray-400 mb-0.5">
-                        {evalResult ? 'Benchmark Score' : 'Does it work?'}
+                        {evalResult ? 'Benchmark Score' : 'Score'}
                       </p>
                       <div className="flex items-baseline gap-1">
                         <p className="text-4xl font-bold text-gray-900">
-                          {evalResult ? evalResult.overall_score : score}
+                          {scoreLoading ? '—' : scoreData?.score ?? 0}
                         </p>
                         <span className="text-xs text-gray-400">/ 100</span>
                       </div>
                     </div>
                     <div className="text-right">
-                      <p className="text-xs text-gray-400 mb-0.5">Safety Grade</p>
+                      <p className="text-xs text-gray-400 mb-0.5">Governance</p>
                       <p
                         className={`text-4xl font-bold ${
-                          (evalResult?.safety_grade || grade) === 'A'
+                          scoreData?.governance_grade === 'A'
                             ? 'text-emerald-600'
-                            : (evalResult?.safety_grade || grade) === 'B'
+                            : scoreData?.governance_grade === 'B'
                             ? 'text-amber-500'
                             : 'text-red-500'
                         }`}
                       >
-                        {evalResult?.safety_grade || grade}
+                        {scoreLoading ? '—' : scoreData?.governance_grade ?? '—'}
                       </p>
                     </div>
                   </div>
@@ -1258,7 +1369,7 @@ export default function AgentDetail() {
 
       {/* ── Settings tab ── */}
       {tab === 'settings' && (
-        <SettingsTab agent={agent} />
+        <SettingsTab agent={agent} scoreData={scoreData} loading={scoreLoading} onScoreChange={setScoreData} />
       )}
 
       {/* ── Playground tab ── */}
@@ -1534,32 +1645,34 @@ export default function AgentDetail() {
                   </span>
                   <div className="flex items-baseline gap-1 mt-1">
                     <span className="text-4xl font-black text-gray-900">
-                      {evalResult ? evalResult.overall_score : score}
+                      {scoreLoading ? '—' : scoreData?.score ?? 0}
                     </span>
                     <span className="text-xs text-gray-400">/ 100</span>
                   </div>
-                  <span className="inline-block mt-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                    {evalResult ? evalResult.benchmark_status : 'Static Configuration Grade'}
-                  </span>
+                  {evalResult && (
+                    <span className="inline-block mt-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                      {evalResult.benchmark_status}
+                    </span>
+                  )}
                 </div>
 
                 <div className="text-right">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
-                    Safety
+                    Governance
                   </span>
                   <div
                     className={`text-4xl font-black mt-1 ${
-                      (evalResult?.safety_grade || grade) === 'A'
+                      scoreData?.governance_grade === 'A'
                         ? 'text-emerald-600'
-                        : (evalResult?.safety_grade || grade) === 'B'
+                        : scoreData?.governance_grade === 'B'
                         ? 'text-amber-500'
                         : 'text-red-500'
                     }`}
                   >
-                    {evalResult?.safety_grade || grade}
+                    {scoreLoading ? '—' : scoreData?.governance_grade ?? '—'}
                   </div>
                   <span className="text-[11px] text-gray-400 block mt-1">
-                    {(evalResult?.safety_grade || grade) === 'A' ? 'Isolated & Safe' : 'Review Permissions'}
+                    {scoreData?.governance_grade === 'A' ? 'Isolated & Safe' : 'Review Permissions'}
                   </span>
                 </div>
               </div>
@@ -1568,7 +1681,7 @@ export default function AgentDetail() {
                 <div
                   className="h-full rounded-full transition-all duration-500"
                   style={{
-                    width: `${evalResult ? evalResult.overall_score : score}%`,
+                    width: `${Math.max(0, Math.min(100, scoreData?.score ?? 0))}%`,
                     backgroundColor: '#2e9e7a',
                   }}
                 />
@@ -1594,58 +1707,76 @@ export default function AgentDetail() {
                 Evaluation Dimensions
               </h4>
 
-              {(evalResult?.dimensions || [
-                {
-                  name: 'Tool Schema & Parameter Integrity',
-                  score: agent.config.tools.length > 0 ? 30 : 15,
-                  max_score: 30,
-                  status: 'pass',
-                  details: `${agent.config.tools.length} tool schemas validated for input/output correctness.`,
-                },
-                {
-                  name: 'ReAct Instruction Scope & Goal Clarity',
-                  score: agent.config.system_prompt.length > 50 ? 30 : 20,
-                  max_score: 30,
-                  status: 'pass',
-                  details: `System prompt length (${agent.config.system_prompt.length} chars) with defined loop behavior.`,
-                },
-                {
-                  name: 'Security & Credential Isolation',
-                  score: grade === 'A' ? 20 : 15,
-                  max_score: 20,
-                  status: 'pass',
-                  details: 'Zero credentials exposed in agent definition; auth tokens stored in vault.',
-                },
-                {
-                  name: 'Execution Latency & Protocol Health',
-                  score: 15,
-                  max_score: 20,
-                  status: 'pending',
-                  details: 'Awaiting dynamic probe execution.',
-                },
-              ]).map((dim, idx) => (
-                <div key={idx} className="bg-white border border-gray-200 rounded-xl p-3.5 shadow-sm space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-gray-800">{dim.name}</span>
-                    <span className="text-xs font-mono font-bold text-gray-700">
-                      {dim.score}/{dim.max_score}
-                    </span>
+              {(
+                evalResult?.dimensions ||
+                (scoreData
+                  ? [
+                      {
+                        name: 'Reliability',
+                        score: scoreData.breakdown.reliability,
+                        max_score: scoreData.breakdown.reliability_max,
+                        status: 'pass',
+                        details:
+                          scoreData.breakdown.run_count === 0
+                            ? 'No runs yet.'
+                            : `${scoreData.breakdown.ok_count}/${scoreData.breakdown.run_count} run(s) succeeded${
+                                scoreData.breakdown.run_count < 5 ? ' — scaled down for a small sample.' : '.'
+                              }`,
+                      },
+                      {
+                        name: 'Scope',
+                        score: scoreData.breakdown.scope,
+                        max_score: scoreData.breakdown.scope_max,
+                        status: 'pass',
+                        details: `${scoreData.breakdown.tool_count} tool(s) attached — fewer tools scores higher, and write/destructive tools cost more than read-only ones.`,
+                      },
+                      {
+                        name: 'Coverage',
+                        score: scoreData.breakdown.coverage,
+                        max_score: scoreData.breakdown.coverage_max,
+                        status: 'pass',
+                        details:
+                          scoreData.breakdown.run_count === 0
+                            ? 'No runs yet.'
+                            : 'Weighted by how many of those runs actually succeeded.',
+                      },
+                      {
+                        name: 'Completeness',
+                        score: scoreData.breakdown.completeness,
+                        max_score: scoreData.breakdown.completeness_max,
+                        status: 'pass',
+                        details: 'Description, system prompt, and having at least one tool.',
+                      },
+                    ]
+                  : [])
+              ).map((dim, idx) => {
+                const pct = Math.max(0, Math.min(100, (dim.score / dim.max_score) * 100))
+                return (
+                  <div key={idx} className="bg-white border border-gray-200 rounded-xl p-3.5 shadow-sm space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-gray-800">{dim.name}</span>
+                      <span className="text-xs font-mono font-bold text-gray-700">
+                        {dim.score}/{dim.max_score}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${
+                          dim.score < 0
+                            ? 'bg-red-400'
+                            : dim.score === dim.max_score
+                            ? 'bg-emerald-500'
+                            : dim.score >= dim.max_score * 0.7
+                            ? 'bg-teal-500'
+                            : 'bg-amber-400'
+                        }`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    <p className="text-[11px] text-gray-500 leading-snug">{dim.details}</p>
                   </div>
-                  <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all duration-300 ${
-                        dim.score === dim.max_score
-                          ? 'bg-emerald-500'
-                          : dim.score >= dim.max_score * 0.7
-                          ? 'bg-teal-500'
-                          : 'bg-amber-400'
-                      }`}
-                      style={{ width: `${(dim.score / dim.max_score) * 100}%` }}
-                    />
-                  </div>
-                  <p className="text-[11px] text-gray-500 leading-snug">{dim.details}</p>
-                </div>
-              ))}
+                )
+              })}
             </div>
 
             {/* Diagnostic Output preview if available */}

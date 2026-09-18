@@ -71,6 +71,13 @@ async def init_publish_graph() -> None:
         conninfo=dsn,
         max_size=5,
         open=False,
+        # Supabase's session-mode pooler silently closes idle connections
+        # server-side; without these, a request can be handed a connection
+        # that's already dead and crash with "server closed the connection
+        # unexpectedly". max_idle recycles connections before that happens,
+        # and check re-validates one right before handing it out either way.
+        max_idle=180,
+        check=AsyncConnectionPool.check_connection,
         kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
     )
     await _pool.open()
