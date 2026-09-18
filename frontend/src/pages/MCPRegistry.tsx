@@ -263,7 +263,7 @@ export default function MCPRegistry() {
                   <div className="w-6 h-6 rounded-full bg-[#2e9e7a] text-white flex items-center justify-center text-xs font-bold mb-2">1</div>
                   <h3 className="text-sm font-semibold text-gray-800 mb-1">Find Your Server</h3>
                   <p className="text-xs text-gray-500">
-                    Once your admin registers servers, they'll appear here. Look for the server you want to use (e.g. GitHub, Slack, Brave Search).
+                    Once your admin registers servers, they'll appear here. Look for the server you want to use (e.g. GitHub, Slack, OpenAI).
                   </p>
                 </div>
 
@@ -289,7 +289,7 @@ export default function MCPRegistry() {
               <div className="mb-4 p-3 bg-blue-50/80 border border-blue-200 rounded-lg text-xs text-blue-800">
                 <p className="font-semibold mb-1">💡 What is a Personal Access Token (PAT)?</p>
                 <p className="text-blue-700 leading-relaxed">
-                  A PAT is a secure key you generate from a service's website (like GitHub, Slack, or Brave Search).
+                  A PAT is a secure key you generate from a service's website (like GitHub, Slack, or OpenAI).
                   It lets AgentFactory access that service <strong>on your behalf</strong>. Each user connects their own token —
                   your credentials are never shared with other workspace members. You can disconnect anytime.
                 </p>

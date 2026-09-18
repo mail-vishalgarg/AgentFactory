@@ -27,26 +27,15 @@ Extracts all MCP servers and their full toolsets directly from **SQL database ta
 
 ---
 
-## 🗄️ Pre-Seeded 15 Real MCP Servers (197 Tools in SQL)
+## 🗄️ Pre-Seeded MCP Servers (70 Tools in SQL)
 
 | # | MCP Server | Category | Transport | Verified Tools in SQL | Package / Command |
-| :---: | :--- | :--- | :---: | :---: | :--- |
+| :---: | :--- | :--- | :--- | :---: | :--- |
 | **1** | **GitHub** | Dev Tools | `stdio` | **44 tools** | `@modelcontextprotocol/server-github` |
-| **2** | **Kubernetes** | Cloud & Infra | `stdio` | **16 tools** | `mcp-server-kubernetes` |
-| **3** | **Docker** | Cloud & Infra | `stdio` | **15 tools** | `mcp-server-docker` |
-| **4** | **Slack** | Productivity | `stdio` | **14 tools** | `@modelcontextprotocol/server-slack` |
-| **5** | **Git** | Dev Tools | `stdio` | **14 tools** | `mcp-server-git` |
-| **6** | **Filesystem** | Dev Tools | `stdio` | **12 tools** | `@modelcontextprotocol/server-filesystem` |
-| **7** | **Jira** | Productivity | `stdio` | **12 tools** | `@modelcontextprotocol/server-jira` |
-| **8** | **Notion** | Productivity | `stdio` | **12 tools** | `@modelcontextprotocol/server-notion` |
-| **9** | **PostgreSQL** | Database | `stdio` | **10 tools** | `@modelcontextprotocol/server-postgres` |
-| **10** | **Linear** | Productivity | `stdio` | **10 tools** | `mcp-server-linear` |
-| **11** | **AWS S3** | Cloud & Infra | `stdio` | **10 tools** | `mcp-server-s3` |
-| **12** | **SQLite** | Database | `stdio` | **8 tools** | `mcp-server-sqlite` |
-| **13** | **Memory** | AI & Web | `stdio` | **8 tools** | `@modelcontextprotocol/server-memory` |
-| **14** | **Web Search** | AI & Web | `stdio` | **6 tools** | `@modelcontextprotocol/server-brave-search` |
-| **15** | **Web Fetch** | AI & Web | `stdio` | **6 tools** | `mcp-server-fetch` |
-| **TOTAL** | **15 Servers** | | | **197 Tools** | |
+| **2** | **Slack** | Productivity | `stdio` | **14 tools** | `@modelcontextprotocol/server-slack` |
+| **3** | **GitLab** | Dev Tools | `stdio` | **8 tools** | `@modelcontextprotocol/server-gitlab` |
+| **4** | **Tavily** | AI & Web | `stdio` | **4 tools** | `tavily-mcp` |
+| **TOTAL** | **4 Servers** | | | **70 Tools** | |
 
 ---
 
