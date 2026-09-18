@@ -115,7 +115,6 @@ GROQ_API = "https://api.groq.com/openai/v1"
 OPENAI_API = "https://api.openai.com/v1"
 BRAVE_API = "https://api.search.brave.com/res/v1/web/search"
 HUGGINGFACE_API = "https://huggingface.co/api/whoami-v2"
-GOOGLE_MAPS_API = "https://maps.googleapis.com/maps/api/geocode/json"
 
 
 def verify_gitlab_token(token: str, endpoint: str = "") -> tuple[bool, str]:
@@ -460,35 +459,6 @@ def verify_huggingface_token(token: str) -> tuple[bool, str]:
         return False, "Hugging Face verification failed."
 
 
-def verify_google_maps_token(token: str) -> tuple[bool, str]:
-    """Verifies Google Maps API key via geocode ping."""
-    trimmed = token.strip()
-    is_garbage, reason = _is_garbage_token(trimmed)
-    if is_garbage:
-        return False, reason
-
-    if not (trimmed.startswith("AIza") or len(trimmed) == 39):
-        return False, "Invalid Google Maps API key: Google API keys typically start with 'AIza' and are 39 chars."
-
-    try:
-        resp = httpx.get(
-            GOOGLE_MAPS_API,
-            params={"address": "Google", "key": trimmed},
-            timeout=5.0,
-        )
-        data = resp.json()
-        status = data.get("status")
-        if status in ("OK", "ZERO_RESULTS"):
-            return True, "Verified with Google Maps API."
-        elif status == "REQUEST_DENIED":
-            error_msg = data.get("error_message") or "Request denied by Google Cloud."
-            return False, f"Google Maps rejected key: {error_msg}"
-    except Exception:
-        if trimmed.startswith("AIza") and len(trimmed) >= 30:
-            return True, "Google Maps key format valid."
-    return False, "Google Maps verification failed."
-
-
 def verify_database_token(server_name: str, token: str) -> tuple[bool, str]:
     """Verifies database connection string or token (Postgres / Turso / SQLite)."""
     trimmed = token.strip()
@@ -552,8 +522,6 @@ def verify_pat_token(server_name: str, token: str, endpoint: str = "") -> tuple[
         return verify_brave_token(trimmed)
     elif "hugging" in norm or norm in ("hf", "huggingface"):
         return verify_huggingface_token(trimmed)
-    elif "maps" in norm or "google" in norm:
-        return verify_google_maps_token(trimmed)
     elif "postgres" in norm or "supabase" in norm or "sqlite" in norm or "turso" in norm:
         return verify_database_token(server_name, trimmed)
 
