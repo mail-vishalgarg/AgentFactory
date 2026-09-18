@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres"
     gemini_api_key: str = ""
     google_api_key: str = ""
-    gemini_model: str = "gemini-3.6-flash"
+    gemini_model: str = "gemini-3.5-flash-lite"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
     frontend_origin: str = "http://localhost:5173"

@@ -12,6 +12,7 @@ from app.deps import get_current_user
 from app.models.user import User
 from app.repositories import agent as agent_repo
 from app.repositories import agent_run as run_repo
+from app.repositories import connection as conn_repo
 from app.repositories import marketplace as marketplace_repo
 from app.schemas.agent import (
     AgentConfigSchema,
@@ -257,9 +258,12 @@ async def run_agent(
         raise HTTPException(status_code=404, detail="Agent not found")
 
     config = AgentConfigSchema.model_validate(agent.config)
+    connections = await conn_repo.list_connections(db, user.id)
+    conn_creds = {c.server_name.lower(): c.token for c in connections if c.status == "active"}
+    active_credentials = {**conn_creds, **(agent.credentials or {})}
     start_time = time.monotonic()
     try:
-        result = await execute_agent(config, credentials=agent.credentials or {}, message=body.message)
+        result = await execute_agent(config, credentials=active_credentials, message=body.message)
     except Exception as exc:
         latency_ms = int((time.monotonic() - start_time) * 1000)
         cost_usd = latency_ms / 1000 * 0.004

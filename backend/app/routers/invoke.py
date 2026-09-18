@@ -48,15 +48,16 @@ async def invoke_agent(
     config = AgentConfigSchema.model_validate(agent.config)
     start = time.monotonic()
     try:
-        output = await execute_agent(config, credentials=agent.credentials or {}, message=body.input)
+        res = await execute_agent(config, credentials=agent.credentials or {}, message=body.input)
+        output_text = res.output if hasattr(res, "output") else str(res)
         latency_ms = int((time.monotonic() - start) * 1000)
         cost_usd = latency_ms / 1000 * 0.004
         await run_repo.record_run(
             db, agent_id, trigger="API", status="ok",
             latency_ms=latency_ms, cost_usd=cost_usd,
-            result=str(output)[:200],
+            result=output_text[:200],
         )
-        return {"output": str(output), "agent_id": str(agent_id)}
+        return {"output": output_text, "agent_id": str(agent_id)}
     except Exception as exc:
         latency_ms = int((time.monotonic() - start) * 1000)
         await run_repo.record_run(

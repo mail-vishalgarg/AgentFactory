@@ -89,7 +89,7 @@ async def add_connection(
                 for k in creds
             )
             if has_server:
-                await agent_repo.update_credentials(db, agent.id, norm_server, trimmed_token)
+                await agent_repo.update_credentials(db, agent.id, norm_server, cleaned_token)
     except Exception:
         pass
 
