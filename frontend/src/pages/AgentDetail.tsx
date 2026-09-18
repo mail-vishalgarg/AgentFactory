@@ -514,8 +514,9 @@ function SettingsTab({ agent }: { agent: Agent }) {
     { label: 'Approval gate', value: scoreData.write_tools_gated ? 'gated' : 'not gated', ok: scoreData.write_tools_gated },
   ]
 
+  const isInstalledFromMarketplace = agent.status === 'live'
   const alreadySubmitted = scoreData.publish_status === 'pending' || scoreData.publish_status === 'approved'
-  const canClickPublish = scoreData.can_publish && !alreadySubmitted && !publishing
+  const canClickPublish = scoreData.can_publish && !alreadySubmitted && !publishing && !isInstalledFromMarketplace
 
   return (
     <div className="flex-1 overflow-auto bg-gray-50 p-8">
@@ -588,15 +589,23 @@ function SettingsTab({ agent }: { agent: Agent }) {
               }`}
               style={canClickPublish ? { backgroundColor: '#2e9e7a' } : undefined}
             >
-              {alreadySubmitted ? 'Submitted for review' : publishing ? 'Publishing…' : 'Publish to Marketplace'}
+              {isInstalledFromMarketplace
+                ? 'Already on Marketplace'
+                : alreadySubmitted
+                  ? 'Submitted for review'
+                  : publishing
+                    ? 'Publishing…'
+                    : 'Publish to Marketplace'}
             </button>
 
             <p className="text-xs text-gray-400 mt-2">
-              {alreadySubmitted
-                ? `Awaiting admin decision (status: ${scoreData.publish_status}). It won't be listed until approved.`
-                : scoreData.can_publish
-                  ? 'Passes every gate — an admin still has to approve it before it goes live.'
-                  : scoreData.blocked_reason}
+              {isInstalledFromMarketplace
+                ? 'This agent was installed from the Marketplace and is already listed there.'
+                : alreadySubmitted
+                  ? `Awaiting admin decision (status: ${scoreData.publish_status}). It won't be listed until approved.`
+                  : scoreData.can_publish
+                    ? 'Passes every gate — an admin still has to approve it before it goes live.'
+                    : scoreData.blocked_reason}
             </p>
 
             {publishError && <p className="text-xs text-red-600 mt-2">{publishError}</p>}
