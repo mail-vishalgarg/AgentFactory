@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from langgraph.types import Command
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
@@ -10,6 +11,7 @@ from app.models.user import User
 from app.repositories import agent as agent_repo
 from app.repositories import marketplace as marketplace_repo
 from app.repositories import mcp as mcp_repo
+from app.repositories import publish_review as publish_review_repo
 from app.schemas.agent import AgentConfigSchema, AgentResponse, GraphConfig, ModelConfig, ToolConfig
 from app.schemas.marketplace import (
     DecideListingRequest,
@@ -18,6 +20,7 @@ from app.schemas.marketplace import (
     MarketplaceToolInfo,
     PendingListingResponse,
 )
+from app.services.publish_graph import get_publish_graph
 
 router = APIRouter()
 
@@ -27,21 +30,22 @@ async def list_pending(
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_admin),
 ) -> list[PendingListingResponse]:
-    listings = await marketplace_repo.list_pending_listings(db)
+    reviews = await publish_review_repo.list_pending_reviews(db)
     return [
         PendingListingResponse(
-            id=str(listing.id),
-            agent_id=str(listing.agent_id),
-            name=listing.name,
-            description=listing.description,
-            tools=[MarketplaceToolInfo.model_validate(t) for t in listing.tools],
-            score=listing.score,
-            governance_grade=listing.governance_grade,
-            publisher_org=listing.publisher_org,
-            status=listing.status,
-            submitted_at=listing.submitted_at,
+            id=str(review.id),
+            agent_id=str(review.agent_id),
+            thread_id=review.thread_id,
+            name=review.name,
+            description=review.description,
+            tools=[MarketplaceToolInfo.model_validate(t) for t in review.tools],
+            score=review.score,
+            governance_grade=review.governance_grade,
+            publisher_org=review.publisher_org,
+            status=review.status,
+            submitted_at=review.submitted_at,
         )
-        for listing in listings
+        for review in reviews
     ]
 
 
@@ -52,16 +56,46 @@ async def decide_listing(
     db: AsyncSession = Depends(get_db),
     admin: User = Depends(require_admin),
 ) -> DecideListingResponse:
-    listing = await marketplace_repo.decide_listing(
-        db, listing_id, body.decision == "approved", body.notes
+    """Resumes the real parked LangGraph thread this review is tied to —
+    loaded fresh from the Postgres checkpointer, so this works identically
+    whether the pause was 5 seconds or 5 restarts ago."""
+    review = await publish_review_repo.get_review(db, listing_id)
+    if review is None or review.status != "pending":
+        raise HTTPException(status_code=404, detail="No pending submission with that id.")
+
+    graph = get_publish_graph()
+    thread_config = {"configurable": {"thread_id": review.thread_id}}
+    await graph.ainvoke(
+        Command(resume={"decision": body.decision, "notes": body.notes}),
+        config=thread_config,
     )
-    if listing is None:
-        raise HTTPException(status_code=404, detail="No pending listing with that id.")
+
+    decided = await publish_review_repo.mark_decided(db, listing_id, body.decision, body.notes)
+    if decided is None:
+        raise HTTPException(status_code=409, detail="This submission was already decided.")
+
+    if body.decision == "approved":
+        await marketplace_repo.create_listing(
+            db,
+            agent_id=decided.agent_id,
+            publisher_owner_id=decided.owner_id,
+            publisher_org=decided.publisher_org,
+            name=decided.name,
+            description=decided.description,
+            system_prompt=decided.system_prompt,
+            model_id=decided.model_id,
+            temperature=float(decided.temperature),
+            tools=decided.tools,
+            score=decided.score,
+            governance_grade=decided.governance_grade,
+            status="approved",
+        )
+
     return DecideListingResponse(
-        id=str(listing.id),
-        status=listing.status,
-        review_notes=listing.review_notes,
-        reviewed_at=listing.reviewed_at,
+        id=str(decided.id),
+        status=decided.status,
+        review_notes=decided.review_notes,
+        reviewed_at=decided.decided_at,
     )
 
 

@@ -534,6 +534,35 @@ function SettingsTab({ agent }: { agent: Agent }) {
           </div>
         </div>
 
+        {(scoreData.publish_status === 'changes_requested' || scoreData.publish_status === 'rejected') && (
+          <div
+            className={`border rounded-lg px-4 py-3 ${
+              scoreData.publish_status === 'changes_requested'
+                ? 'bg-amber-50 border-amber-200'
+                : 'bg-red-50 border-red-200'
+            }`}
+          >
+            <p
+              className={`text-sm font-medium ${
+                scoreData.publish_status === 'changes_requested' ? 'text-amber-800' : 'text-red-700'
+              }`}
+            >
+              {scoreData.publish_status === 'changes_requested' ? 'Changes requested' : 'Rejected'}
+              {scoreData.reviewed_at && (
+                <span className="font-normal text-xs ml-2 opacity-70">
+                  · {new Date(scoreData.reviewed_at).toLocaleString()}
+                </span>
+              )}
+            </p>
+            {scoreData.review_notes && (
+              <p className="text-sm text-gray-700 mt-1">{scoreData.review_notes}</p>
+            )}
+            <p className="text-xs text-gray-500 mt-1">
+              You can hit Publish again once you've made changes.
+            </p>
+          </div>
+        )}
+
         <div>
           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Marketplace publishing</p>
           <div className="border border-gray-200 rounded-lg bg-white px-4 py-4">

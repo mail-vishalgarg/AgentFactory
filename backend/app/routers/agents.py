@@ -13,7 +13,7 @@ from app.models.user import User
 from app.repositories import agent as agent_repo
 from app.repositories import agent_run as run_repo
 from app.repositories import connection as conn_repo
-from app.repositories import marketplace as marketplace_repo
+from app.repositories import publish_review as publish_review_repo
 from app.schemas.agent import (
     AgentConfigSchema,
     AgentCreate,
@@ -25,6 +25,7 @@ from app.schemas.agent import (
 )
 from app.services.agent_builder import build_agent_config, execute_agent, resume_agent as _resume_agent
 from app.services.github_tools import verify_pat_token
+from app.services.publish_graph import get_publish_graph
 from app.services.scoring import evaluate_publish_gate
 
 router = APIRouter()
@@ -186,7 +187,7 @@ async def get_agent_score(
     config = AgentConfigSchema.model_validate(agent.config)
     run_count, ok_count = await run_repo.get_run_stats(db, agent_id)
     gate = evaluate_publish_gate(config, run_count, ok_count)
-    listing = await marketplace_repo.get_latest_listing_for_agent(db, agent_id)
+    review = await publish_review_repo.get_latest_review_for_agent(db, agent_id)
 
     return AgentScoreResponse(
         score=gate.score,
@@ -196,7 +197,9 @@ async def get_agent_score(
         write_tools_gated=gate.write_tools_gated,
         can_publish=gate.can_publish,
         blocked_reason=gate.blocked_reason,
-        publish_status=listing.status if listing else None,
+        publish_status=review.status if review else None,
+        review_notes=review.review_notes if review else None,
+        reviewed_at=review.decided_at if review else None,
     )
 
 
@@ -206,9 +209,19 @@ async def publish_agent(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> PublishResponse:
+    """Starts a real, durable LangGraph run that pauses immediately and waits
+    for an admin — possibly for days, across restarts (Postgres-backed
+    checkpointer, not in-memory). See services/publish_graph.py."""
     agent = await agent_repo.get_agent_for_owner(db, agent_id, user.id)
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
+
+    existing = await publish_review_repo.get_active_review_for_agent(db, agent_id)
+    if existing is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="This agent already has a submission awaiting admin review.",
+        )
 
     config = AgentConfigSchema.model_validate(agent.config)
     run_count, ok_count = await run_repo.get_run_stats(db, agent_id)
@@ -229,21 +242,39 @@ async def publish_agent(
         for t in config.tools
     ]
     publisher_org = user.email.split("@")[-1] if "@" in user.email else "unknown"
-    listing = await marketplace_repo.create_listing(
+
+    thread_id = str(uuid.uuid4())
+    graph = get_publish_graph()
+    await graph.ainvoke(
+        {
+            "agent_id": str(agent_id),
+            "name": agent.name,
+            "score": gate.score,
+            "governance_grade": gate.governance,
+            "decision": None,
+            "notes": None,
+        },
+        config={"configurable": {"thread_id": thread_id}},
+    )
+    # ainvoke returns as soon as the graph's one node hits interrupt() —
+    # execution genuinely paused here, checkpointed to Postgres.
+
+    review = await publish_review_repo.create_review(
         db,
         agent_id=agent_id,
-        publisher_owner_id=user.id,
-        publisher_org=publisher_org,
+        owner_id=user.id,
+        thread_id=thread_id,
         name=agent.name,
         description=agent.description,
-        system_prompt=config.system_prompt,
-        model_id=config.model.model_id,
-        temperature=config.model.temperature,
         tools=sanitized_tools,
         score=gate.score,
         governance_grade=gate.governance,
+        publisher_org=publisher_org,
+        system_prompt=config.system_prompt,
+        model_id=config.model.model_id,
+        temperature=config.model.temperature,
     )
-    return PublishResponse(listing_id=str(listing.id), status=listing.status)
+    return PublishResponse(listing_id=str(review.id), status=review.status)
 
 
 @router.post("/{agent_id}/run", response_model=AgentRunResponse)

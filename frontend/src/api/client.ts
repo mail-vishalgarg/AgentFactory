@@ -180,11 +180,14 @@ export interface AgentScore {
   can_publish: boolean
   blocked_reason: string | null
   publish_status: string | null
+  review_notes: string | null
+  reviewed_at: string | null
 }
 
 export interface PendingListing {
   id: string
   agent_id: string
+  thread_id: string
   name: string
   description: string
   tools: MarketplaceTool[]
@@ -355,7 +358,7 @@ export const api = {
   installListing: (listingId: string) =>
     req<Agent>(`/marketplace/${listingId}/install`, { method: 'POST' }),
   listPendingListings: () => req<PendingListing[]>('/marketplace/admin/pending'),
-  decideListing: (listingId: string, decision: 'approved' | 'rejected', notes?: string) =>
+  decideListing: (listingId: string, decision: 'approved' | 'rejected' | 'changes_requested', notes?: string) =>
     req<DecideListingResult>(`/marketplace/admin/${listingId}/decide`, {
       method: 'POST',
       body: JSON.stringify({ decision, ...(notes ? { notes } : {}) }),

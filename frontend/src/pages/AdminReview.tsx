@@ -24,10 +24,10 @@ interface ListingCardProps {
 
 function ListingCard({ listing, onDecided }: ListingCardProps) {
   const [notes, setNotes] = useState('')
-  const [deciding, setDeciding] = useState<'approved' | 'rejected' | null>(null)
+  const [deciding, setDeciding] = useState<'approved' | 'rejected' | 'changes_requested' | null>(null)
   const [error, setError] = useState('')
 
-  async function handleDecide(decision: 'approved' | 'rejected') {
+  async function handleDecide(decision: 'approved' | 'rejected' | 'changes_requested') {
     setDeciding(decision)
     setError('')
     try {
@@ -49,6 +49,17 @@ function ListingCard({ listing, onDecided }: ListingCardProps) {
         <span className="text-xs text-gray-400 whitespace-nowrap">
           {timeAgo(listing.submitted_at)}
         </span>
+      </div>
+
+      <div className="flex items-center gap-2 text-xs text-gray-400 font-mono bg-gray-50 border border-gray-100 rounded px-2.5 py-1.5">
+        <span className="flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+          Waiting {timeAgo(listing.submitted_at).replace(' ago', '')}
+        </span>
+        <span className="text-gray-300">·</span>
+        <span>State: paused</span>
+        <span className="text-gray-300">·</span>
+        <span title={listing.thread_id}>Thread: thr_{listing.thread_id.slice(0, 8)}…</span>
       </div>
 
       <div className="flex flex-wrap gap-1">
@@ -100,6 +111,13 @@ function ListingCard({ listing, onDecided }: ListingCardProps) {
           style={{ backgroundColor: '#2e9e7a' }}
         >
           {deciding === 'approved' ? 'Approving…' : 'Approve'}
+        </button>
+        <button
+          onClick={() => handleDecide('changes_requested')}
+          disabled={deciding !== null}
+          className="flex-1 px-3 py-1.5 text-sm text-amber-700 rounded-md border border-amber-300 hover:bg-amber-50 font-medium disabled:opacity-60"
+        >
+          {deciding === 'changes_requested' ? 'Sending…' : 'Request changes'}
         </button>
         <button
           onClick={() => handleDecide('rejected')}

@@ -9,6 +9,7 @@ from sqlalchemy import text
 
 from app.db import engine
 from app.routers import agent_runs, agents, auth, connections, invoke, marketplace, mcp_registry
+from app.services.publish_graph import close_publish_graph, init_publish_graph
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,10 @@ async def lifespan(app: FastAPI):
             )
     except Exception as exc:
         logger.warning("Could not auto-migrate server_last_used column: %s", exc)
+
+    await init_publish_graph()
     yield
+    await close_publish_graph()
 
 
 app = FastAPI(

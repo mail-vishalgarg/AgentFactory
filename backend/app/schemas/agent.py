@@ -76,6 +76,8 @@ class AgentScoreResponse(BaseModel):
     can_publish: bool
     blocked_reason: str | None
     publish_status: str | None
+    review_notes: str | None = None
+    reviewed_at: datetime | None = None
 
 
 class PublishResponse(BaseModel):

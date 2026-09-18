@@ -1,5 +1,4 @@
 import uuid
-from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy import select
@@ -21,7 +20,10 @@ async def create_listing(
     tools: list[dict[str, Any]],
     score: int,
     governance_grade: str,
+    status: str = "approved",
 ) -> MarketplaceListing:
+    """Called only once a review_reviews row has actually been approved —
+    marketplace_listings holds published listings only, never pending ones."""
     listing = MarketplaceListing(
         agent_id=agent_id,
         publisher_owner_id=publisher_owner_id,
@@ -34,7 +36,7 @@ async def create_listing(
         tools=tools,
         score=score,
         governance_grade=governance_grade,
-        status="pending",
+        status=status,
     )
     db.add(listing)
     await db.commit()
@@ -77,28 +79,3 @@ async def increment_install_count(db: AsyncSession, listing_id: uuid.UUID) -> No
     if listing is not None:
         listing.install_count += 1
         await db.commit()
-
-
-async def list_pending_listings(db: AsyncSession) -> list[MarketplaceListing]:
-    result = await db.execute(
-        select(MarketplaceListing)
-        .where(MarketplaceListing.status == "pending")
-        .order_by(MarketplaceListing.submitted_at.asc())
-    )
-    return list(result.scalars().all())
-
-
-async def decide_listing(
-    db: AsyncSession, listing_id: uuid.UUID, approved: bool, notes: str | None
-) -> MarketplaceListing | None:
-    """Only ever acts on a still-pending row — a listing already decided
-    can't be re-decided by a second admin racing the first."""
-    listing = await db.get(MarketplaceListing, listing_id)
-    if listing is None or listing.status != "pending":
-        return None
-    listing.status = "approved" if approved else "rejected"
-    listing.review_notes = notes
-    listing.reviewed_at = datetime.now(timezone.utc)
-    await db.commit()
-    await db.refresh(listing)
-    return listing

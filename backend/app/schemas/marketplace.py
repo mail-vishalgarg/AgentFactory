@@ -27,6 +27,7 @@ class MarketplaceListingResponse(BaseModel):
 class PendingListingResponse(BaseModel):
     id: str
     agent_id: str
+    thread_id: str
     name: str
     description: str
     tools: list[MarketplaceToolInfo]
@@ -38,7 +39,7 @@ class PendingListingResponse(BaseModel):
 
 
 class DecideListingRequest(BaseModel):
-    decision: Literal["approved", "rejected"]
+    decision: Literal["approved", "rejected", "changes_requested"]
     notes: str | None = None
 
 
