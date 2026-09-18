@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import Layout from './components/Layout'
 import RequireAuth from './components/RequireAuth'
+import AdminReview from './pages/AdminReview'
 import AgentBuilder from './pages/AgentBuilder'
 import AgentDetail from './pages/AgentDetail'
 import Connections from './pages/Connections'
@@ -34,6 +35,7 @@ export default function App() {
           <Route path="connections" element={<Connections />} />
           <Route path="marketplace" element={<Marketplace />} />
           <Route path="marketplace/:id" element={<MarketplaceListingDetail />} />
+          <Route path="admin" element={<AdminReview />} />
         </Route>
       </Routes>
     </BrowserRouter>

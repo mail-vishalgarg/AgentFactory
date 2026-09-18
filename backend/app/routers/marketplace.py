@@ -5,15 +5,64 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, require_admin
 from app.models.user import User
 from app.repositories import agent as agent_repo
 from app.repositories import marketplace as marketplace_repo
 from app.repositories import mcp as mcp_repo
 from app.schemas.agent import AgentConfigSchema, AgentResponse, GraphConfig, ModelConfig, ToolConfig
-from app.schemas.marketplace import MarketplaceListingResponse, MarketplaceToolInfo
+from app.schemas.marketplace import (
+    DecideListingRequest,
+    DecideListingResponse,
+    MarketplaceListingResponse,
+    MarketplaceToolInfo,
+    PendingListingResponse,
+)
 
 router = APIRouter()
+
+
+@router.get("/admin/pending", response_model=list[PendingListingResponse])
+async def list_pending(
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> list[PendingListingResponse]:
+    listings = await marketplace_repo.list_pending_listings(db)
+    return [
+        PendingListingResponse(
+            id=str(listing.id),
+            agent_id=str(listing.agent_id),
+            name=listing.name,
+            description=listing.description,
+            tools=[MarketplaceToolInfo.model_validate(t) for t in listing.tools],
+            score=listing.score,
+            governance_grade=listing.governance_grade,
+            publisher_org=listing.publisher_org,
+            status=listing.status,
+            submitted_at=listing.submitted_at,
+        )
+        for listing in listings
+    ]
+
+
+@router.post("/admin/{listing_id}/decide", response_model=DecideListingResponse)
+async def decide_listing(
+    listing_id: uuid.UUID,
+    body: DecideListingRequest,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_admin),
+) -> DecideListingResponse:
+    listing = await marketplace_repo.decide_listing(
+        db, listing_id, body.decision == "approved", body.notes
+    )
+    if listing is None:
+        raise HTTPException(status_code=404, detail="No pending listing with that id.")
+    return DecideListingResponse(
+        id=str(listing.id),
+        status=listing.status,
+        review_notes=listing.review_notes,
+        reviewed_at=listing.reviewed_at,
+    )
 
 
 def _to_response(listing: object) -> MarketplaceListingResponse:

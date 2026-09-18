@@ -182,6 +182,26 @@ export interface AgentScore {
   publish_status: string | null
 }
 
+export interface PendingListing {
+  id: string
+  agent_id: string
+  name: string
+  description: string
+  tools: MarketplaceTool[]
+  score: number
+  governance_grade: string
+  publisher_org: string
+  status: string
+  submitted_at: string
+}
+
+export interface DecideListingResult {
+  id: string
+  status: string
+  review_notes: string | null
+  reviewed_at: string | null
+}
+
 export interface RegisterServerRequest {
   name: string
   description: string
@@ -334,6 +354,12 @@ export const api = {
   getMarketplaceListing: (listingId: string) => req<MarketplaceListing>(`/marketplace/${listingId}`),
   installListing: (listingId: string) =>
     req<Agent>(`/marketplace/${listingId}/install`, { method: 'POST' }),
+  listPendingListings: () => req<PendingListing[]>('/marketplace/admin/pending'),
+  decideListing: (listingId: string, decision: 'approved' | 'rejected', notes?: string) =>
+    req<DecideListingResult>(`/marketplace/admin/${listingId}/decide`, {
+      method: 'POST',
+      body: JSON.stringify({ decision, ...(notes ? { notes } : {}) }),
+    }),
   signup: (email: string, password: string) =>
     req<AuthResponse>('/auth/signup', { method: 'POST', body: JSON.stringify({ email, password }) }),
   login: (email: string, password: string) =>

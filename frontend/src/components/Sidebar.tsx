@@ -15,6 +15,9 @@ const workspace: NavItem[] = [
 
 const shared: NavItem[] = [
   { label: 'Marketplace', to: '/marketplace' },
+]
+
+const adminOnly: NavItem[] = [
   { label: 'Admin Review', to: '/admin' },
 ]
 
@@ -69,6 +72,7 @@ export default function Sidebar() {
       </div>
       <nav className="flex-1 px-2 py-4 overflow-y-auto">
         <NavGroup title="Workspace" items={workspace} />
+        {user?.is_admin && <NavGroup title="Admin" items={adminOnly} />}
         <NavGroup title="Shared" items={shared} />
       </nav>
       {user && (
