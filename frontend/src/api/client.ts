@@ -65,6 +65,7 @@ export interface MCPServer {
   created_at: string
   tools: MCPTool[]
   connected: boolean
+  is_suggested: boolean
 }
 
 export interface EvaluationDimension {

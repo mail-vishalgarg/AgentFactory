@@ -69,26 +69,80 @@ def _tool_needs_approval(tool_name: str) -> bool:
     return bool(tokens & (_DESTRUCTIVE_TOKENS | _WRITE_TOKENS))
 
 
+def _server_intent(server_name: str, user_prompt: str) -> str | None:
+    """Return 'read', 'write', or None for this server based on the prompt.
+
+    Strategy:
+    1. Check a tight ±2-word local window around the server name — avoids
+       cross-server contamination (e.g. 'post' near 'slack' bleeding into 'github').
+    2. If local context is ambiguous/neutral, fall back to the global prompt intent.
+    """
+    words = user_prompt.lower().split()
+    name_tokens = set(server_name.lower().replace("-", " ").replace("_", " ").split())
+
+    # Tight local context: 2 words on each side of every occurrence of the server name
+    local: list[str] = []
+    for i, w in enumerate(words):
+        if w.strip(".,!?") in name_tokens:
+            local.extend(words[max(0, i - 2): i + 3])
+
+    def _classify(word_list: list[str]) -> str | None:
+        ws = {w.strip(".,!?") for w in word_list}
+        has_read = bool(ws & _READ_INTENT_KEYWORDS)
+        has_write = bool(ws & _WRITE_INTENT_KEYWORDS)
+        if has_read and not has_write:
+            return "read"
+        if has_write and not has_read:
+            return "write"
+        return None
+
+    if local:
+        intent = _classify(local)
+        if intent is not None:
+            return intent
+        # Local context is neutral/ambiguous — fall through to global
+
+    # Global fallback: covers cases like "github and slack read agent"
+    # where the intent keyword sits away from the server name
+    return _classify(words)
+
+
+def _filter_by_intent(tools: list, user_prompt: str) -> list:
+    """Pre-filter tools per server based on the intent stated in the prompt."""
+    result: list = []
+    # Group by server name
+    by_server: dict[str, list] = {}
+    for t in tools:
+        key = (t.server.name if t.server else "").lower()
+        by_server.setdefault(key, []).append(t)
+
+    for server_name, server_tools in by_server.items():
+        intent = _server_intent(server_name, user_prompt)
+        if intent == "read":
+            filtered = [t for t in server_tools if t.permission_level == "read"]
+            result.extend(filtered if filtered else server_tools)
+        elif intent == "write":
+            filtered = [t for t in server_tools if t.permission_level in ("write", "destructive")]
+            result.extend(filtered if filtered else server_tools)
+        else:
+            result.extend(server_tools)
+
+    return result
+
+
 async def _select_relevant_tools(
     user_prompt: str,
     tools: list,
     model_id: str,
 ) -> list:
-    """Use the LLM to pick only tools relevant to the user's task, respecting permission levels."""
-    read_only = _is_read_only_intent(user_prompt)
-
-    # Hard filter: strip write/destructive tools for clearly read-only tasks
-    if read_only:
-        tools = [t for t in tools if t.permission_level not in ("write", "destructive")]
+    """Filter tools by per-server intent, then use LLM only if still above threshold."""
+    # Step 1: per-server intent filter (read/write based on prompt context)
+    tools = _filter_by_intent(tools, user_prompt)
 
     if len(tools) <= _TOOL_SELECTION_THRESHOLD:
         return tools
 
-    permission_note = (
-        "IMPORTANT: This is a READ-ONLY task. Do NOT include any tools with WRITE or DESTRUCTIVE permissions.\n"
-        if read_only else ""
-    )
-
+    # Step 2: LLM picks the most relevant subset from what remains
     tool_list = "\n".join(
         f"- {t.name} [{t.permission_level.upper()}]: {(t.description or '')[:120]}"
         for t in tools
@@ -96,13 +150,34 @@ async def _select_relevant_tools(
     selection_prompt = (
         f"You are selecting tools for an AI agent.\n"
         f"Task: {user_prompt}\n\n"
-        f"{permission_note}"
         f"Available tools (name [permission_level]: description):\n{tool_list}\n\n"
-        "Reply with ONLY the exact tool names needed to accomplish this task, "
-        "one per line, no explanations, no bullet points."
+        "Tool permission levels:\n"
+        "- READ: Retrieves, searches, lists, or analyzes data without modifying anything.\n"
+        "- WRITE: Creates or updates data or performs an external action, but does not "
+        "permanently delete or irreversibly destroy data.\n"
+        "- DESTRUCTIVE: Deletes, permanently overwrites, revokes, removes, or performs "
+        "an irreversible or high-impact operation.\n\n"
+        "Selection rules:\n"
+        "1. Select ALL tools that are useful or potentially required to complete the task.\n"
+        "2. Be inclusive. If multiple tools from the same service are relevant, include all "
+        "relevant tools.\n"
+        "3. Prefer READ tools when the task only requires retrieving or analyzing information.\n"
+        "4. Include WRITE tools when the task requires creating, updating, sending, or executing "
+        "an action.\n"
+        "5. Include DESTRUCTIVE tools only when the user's task explicitly requires the "
+        "destructive operation. Do not select destructive tools merely because they are "
+        "available or related to the task.\n"
+        "6. Never infer permission to perform a destructive operation from a general request. "
+        "For example, 'clean up old files' is not sufficient to select a delete tool unless "
+        "the task clearly requires deletion.\n"
+        "7. Selecting a tool does NOT mean the tool should be executed immediately. A separate "
+        "execution/approval layer must enforce permission and confirmation requirements.\n"
+        "8. Do not select tools that are unrelated to the task.\n\n"
+        "Output format:\n"
+        "Reply with ONLY the exact tool names, one per line.\n"
+        "Do not include permission levels, explanations, reasoning, bullet points, or markdown.\n"
     )
 
-    # Build a minimal LLM just for selection
     use_openai = "gpt" in model_id.lower()
     if use_openai and settings.openai_api_key:
         from langchain_openai import ChatOpenAI as _OpenAI
@@ -111,7 +186,7 @@ async def _select_relevant_tools(
         target = model_id if "gemini" in model_id.lower() else (settings.gemini_model or "gemini-2.0-flash")
         llm = ChatGoogleGenerativeAI(model=target, temperature=0.0, api_key=settings.active_gemini_api_key)
     else:
-        return tools  # no LLM available — keep all
+        return tools
 
     try:
         response = await llm.ainvoke([("human", selection_prompt)])
@@ -121,12 +196,9 @@ async def _select_relevant_tools(
             if line.strip()
         }
         filtered = [t for t in tools if t.name.lower() in selected_names]
-        # Second hard filter: never let write tools through for read-only tasks
-        if read_only:
-            filtered = [t for t in filtered if t.permission_level not in ("write", "destructive")]
         return filtered if filtered else tools
     except Exception:
-        return tools  # fallback: keep all tools if selection fails
+        return tools
 
 
 async def build_agent_config(db: AsyncSession, request: AgentCreate) -> AgentConfigSchema:
@@ -312,6 +384,8 @@ async def _handle_graph_state(
     config: AgentConfigSchema,
     credentials: dict[str, str],
 ) -> RunResult:
+    thread_id = thread_config["configurable"]["thread_id"]
+
     for _ in range(20):
         state = graph.get_state(thread_config)
         if not state.next:
@@ -322,7 +396,37 @@ async def _handle_graph_state(
         if not (last and hasattr(last, "tool_calls") and last.tool_calls):
             break
 
-        # Auto-approve all tool calls directly for a seamless user experience
+        # Check whether any pending tool call needs human approval
+        approval_tc = None
+        for tc in last.tool_calls:
+            t_name = tc["name"] if isinstance(tc, dict) else tc.name
+            tool_cfg = next(
+                (t for t in config.tools
+                 if t.tool_name == t_name
+                 or f"{t.mcp_server_name}__{t.tool_name}" == t_name
+                 or t.tool_name == _mcp_tool_name(t_name)),
+                None,
+            )
+            if (tool_cfg and tool_cfg.requires_approval) or _tool_needs_approval(t_name):
+                approval_tc = tc
+                break
+
+        if approval_tc is not None:
+            t_name = approval_tc["name"] if isinstance(approval_tc, dict) else approval_tc.name
+            t_args = approval_tc["args"] if isinstance(approval_tc, dict) else approval_tc.args
+            _approval_registry[thread_id] = (graph, thread_config, config, credentials)
+            return RunResult(
+                output=(
+                    f"⚠️ The agent wants to run **{t_name}**, which is a write/destructive action. "
+                    f"Please approve or reject this operation."
+                ),
+                status="pending_approval",
+                thread_id=thread_id,
+                pending_tool_name=t_name,
+                pending_tool_args=t_args,
+            )
+
+        # All tool calls are safe (READ) — execute automatically
         tool_messages = []
         for tc in last.tool_calls:
             t_name = tc["name"] if isinstance(tc, dict) else tc.name

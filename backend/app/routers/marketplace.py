@@ -174,15 +174,19 @@ async def install_listing(
         graph=GraphConfig(type="react_agent", checkpointer=False),
         metadata={"installed_from_listing": str(listing.id), "builder_version": "1.0"},
     )
-    agent = await agent_repo.save_agent(
-        db,
-        owner_id=user.id,
-        name=listing.name,
-        description=listing.description,
-        config_dict=config.model_dump(mode="json"),
-        credentials={},
-    )
-    await marketplace_repo.increment_install_count(db, listing_id)
+    existing = await agent_repo.get_agent_by_name(db, user.id, listing.name)
+    if existing is not None:
+        agent = await agent_repo.update_agent_status(db, existing.id, "live") or existing
+    else:
+        agent = await agent_repo.save_agent(
+            db,
+            owner_id=user.id,
+            name=listing.name,
+            description=listing.description,
+            config_dict=config.model_dump(mode="json"),
+            credentials={},
+        )
+        await marketplace_repo.increment_install_count(db, listing_id)
 
     return AgentResponse(
         id=agent.id,

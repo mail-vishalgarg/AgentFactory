@@ -19,16 +19,19 @@ logger = logging.getLogger(__name__)
 
 
 async def _to_responses(
-    db: AsyncSession, user: User, servers: list[MCPServer]
+    db: AsyncSession,
+    user: User,
+    servers: list[MCPServer],
+    suggested_ids: set | None = None,
 ) -> list[MCPServerResponse]:
-    """Attach each server's `connected` flag for THIS viewer before validating —
-    never another user's connection status."""
+    """Attach each server's `connected` and `is_suggested` flags before validating."""
     connections = await conn_repo.list_connections(db, user.id)
     connected_names = {c.server_name.lower() for c in connections if c.status == "active"}
     responses = []
     for s in servers:
         response = MCPServerResponse.model_validate(s)
         response.connected = s.name.lower() in connected_names
+        response.is_suggested = suggested_ids is not None and s.id in suggested_ids
         responses.append(response)
     return responses
 
@@ -271,13 +274,12 @@ async def suggest_tools(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[MCPServerResponse]:
-    """Return ALL visible servers. Matched servers come first so the frontend
-    can pre-check them; the user deselects whatever they don't need."""
+    """Return ALL visible servers with is_suggested=True for prompt-matched ones.
+    Matched servers appear first; unmatched are unchecked by default."""
     matched = await svc.find_tools_for_prompt(db, user.id, prompt)
     all_servers = await svc.list_servers(db, user.id)
 
     matched_ids = {s.id for s in matched}
-    # matched first, then the rest (not duplicated)
     ordered = list(matched) + [s for s in all_servers if s.id not in matched_ids]
 
-    return await _to_responses(db, user, ordered)
+    return await _to_responses(db, user, ordered, suggested_ids=matched_ids)

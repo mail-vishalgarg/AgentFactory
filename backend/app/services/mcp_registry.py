@@ -78,18 +78,13 @@ async def find_tools_for_prompt(db: AsyncSession, owner_id: uuid.UUID, prompt: s
 
     matched: list[MCPServer] = []
     for server in servers:
-        # tokenise the server name on hyphens/underscores so "github-vishal" → {"github", "vishal"}
+        # tokenise server name only — description is too noisy for matching
         name_tokens = set(server.name.lower().replace("-", " ").replace("_", " ").split())
-        desc_tokens = {
-            w.strip(".,!?") for w in (server.description or "").lower().split()
-            if len(w) > 3
-        }
-        server_keywords = name_tokens | desc_tokens
 
-        # match if any server keyword appears in the prompt OR any prompt keyword appears in the server name/desc
-        hits_prompt = any(tok in prompt_lower for tok in server_keywords)
-        hits_server = any(kw in server.name.lower() or kw in (server.description or "").lower()
-                          for kw in prompt_keywords)
+        # a server is suggested only when its name appears in the prompt
+        # or a prompt keyword matches the server name directly
+        hits_prompt = any(tok in prompt_lower for tok in name_tokens)
+        hits_server = any(kw in server.name.lower() for kw in prompt_keywords)
 
         if hits_prompt or hits_server:
             matched.append(server)

@@ -27,7 +27,15 @@ const CRED_LABELS: Record<string, { label: string; placeholder: string; hint: st
   },
 }
 
-function deriveAgentName(servers: MCPServer[]): string {
+function deriveAgentName(servers: MCPServer[], promptText?: string): string {
+  if (promptText && promptText.trim()) {
+    return promptText
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '')
+      .slice(0, 50)
+  }
   if (servers.length === 0) return 'my_agent'
   return servers.map((s) => s.name.toLowerCase().replace(/[^a-z0-9]/g, '_')).join('_') + '_agent'
 }
@@ -58,12 +66,11 @@ export default function AgentBuilder() {
     setStage(1)
     setError('')
     try {
-      // Backend returns ALL visible servers (matched ones come first).
-      // All are pre-checked; user deselects what they don't need.
       const servers = await api.suggestTools(prompt)
       setSuggestedServers(servers)
-      setCheckedServers(new Set(servers.map((s) => s.id)))
-      setAgentName(deriveAgentName(servers))
+      // Pre-check only servers the backend matched to the prompt; rest stay unchecked.
+      setCheckedServers(new Set(servers.filter((s) => s.is_suggested).map((s) => s.id)))
+      setAgentName(deriveAgentName(servers.filter((s) => s.is_suggested), prompt))
     } catch {
       setError('Failed to load suggested tools.')
     }
@@ -147,7 +154,7 @@ export default function AgentBuilder() {
     if (stage !== 3) return
     const selected = suggestedServers.filter((s) => checkedServers.has(s.id))
     const toolIds = selected.flatMap((s) => s.tools?.map((t) => t.id) ?? [])
-    const name = agentName.trim() || deriveAgentName(selected)
+    const name = agentName.trim() || deriveAgentName(selected, prompt)
 
     // Merge explicit credentials with pre-connected server names so the
     // backend can resolve tokens from the connections table.
