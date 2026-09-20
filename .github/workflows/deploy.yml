@@ -102,18 +102,11 @@ jobs:
       - name: Configure Docker for Artifact Registry
         run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
 
-      - name: Get backend URL
-        run: |
-          BACKEND_URL=$(gcloud run services describe ${{ env.BACKEND_SERVICE }} \
-            --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} \
-            --format='value(status.url)')
-          echo "BACKEND_URL=$BACKEND_URL" >> $GITHUB_ENV
-
       - name: Build and push frontend image
         run: |
           IMAGE=${{ env.REGION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/frontend:${{ github.sha }}
           docker build \
-            --build-arg VITE_API_URL=$BACKEND_URL \
+            --build-arg VITE_API_URL=${{ secrets.VITE_API_URL }} \
             -t $IMAGE ./frontend
           docker push $IMAGE
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
