@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login &amp; Sessions — AgentFactory</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f8fafc;
+      color: #1e293b;
+      padding: 40px 24px 80px;
+    }
+
+    h1 { text-align: center; font-size: 22px; font-weight: 700; margin-bottom: 6px; color: #0f172a; }
+    .subtitle { text-align: center; font-size: 13px; color: #64748b; margin-bottom: 48px; }
+
+    .diagram { display: flex; gap: 0; justify-content: center; align-items: flex-start; flex-wrap: wrap; }
+    .col { display: flex; flex-direction: column; align-items: center; width: 220px; flex-shrink: 0; }
+    .col-header {
+      font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+      padding: 5px 14px; border-radius: 20px; margin-bottom: 20px;
+    }
+    .col-header.frontend { background: #dbeafe; color: #1d4ed8; }
+    .col-header.backend  { background: #dcfce7; color: #15803d; }
+    .col-header.service  { background: #fef9c3; color: #a16207; }
+    .col-header.repo     { background: #ede9fe; color: #6d28d9; }
+    .col-header.db       { background: #fee2e2; color: #b91c1c; }
+
+    .connector { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 60px; flex-shrink: 0; padding-top: 56px; }
+    .h-arrow { width: 100%; height: 2px; background: #94a3b8; position: relative; }
+    .h-arrow::after { content: ''; position: absolute; right: -1px; top: -5px; border: 6px solid transparent; border-left-color: #94a3b8; border-right: none; }
+    .h-label { font-size: 10px; color: #64748b; margin-top: 4px; text-align: center; white-space: nowrap; }
+
+    .box {
+      width: 200px; border-radius: 10px; padding: 12px 14px; font-size: 12px; line-height: 1.5;
+      border: 1.5px solid; position: relative; cursor: default; transition: box-shadow .15s;
+    }
+    .box:hover { box-shadow: 0 4px 16px rgba(0,0,0,.12); }
+    .box .tag { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; margin-bottom: 5px; }
+    .box .title { font-weight: 600; font-size: 13px; margin-bottom: 3px; }
+    .box .file { font-size: 10px; font-family: 'SF Mono', Menlo, monospace; opacity: .7; margin-top: 4px; }
+    .box ul { margin-top: 5px; padding-left: 14px; color: inherit; opacity: .85; }
+    .box ul li { margin-bottom: 2px; }
+
+    .box.fe   { background: #eff6ff; border-color: #93c5fd; color: #1e3a8a; }
+    .box.fe .tag { background: #bfdbfe; color: #1d4ed8; }
+    .box.be   { background: #f0fdf4; border-color: #86efac; color: #14532d; }
+    .box.be .tag { background: #bbf7d0; color: #15803d; }
+    .box.svc  { background: #fefce8; border-color: #fde047; color: #713f12; }
+    .box.svc .tag { background: #fef08a; color: #a16207; }
+    .box.repo { background: #f5f3ff; border-color: #c4b5fd; color: #3b0764; }
+    .box.repo .tag { background: #ddd6fe; color: #6d28d9; }
+    .box.db   { background: #fff1f2; border-color: #fca5a5; color: #7f1d1d; }
+    .box.db .tag { background: #fecdd3; color: #b91c1c; }
+
+    .box.decision {
+      background: #fff7ed; border-color: #fdba74; color: #7c2d12;
+      clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+      width: 170px; height: 90px; display: flex; align-items: center; justify-content: center;
+      text-align: center; font-size: 11px; font-weight: 600; padding: 0 30px;
+    }
+    .box.decision .tag, .box.decision .file { display: none; }
+
+    .v-arrow { width: 2px; height: 24px; background: #94a3b8; position: relative; margin: 0 auto; }
+    .v-arrow::after { content: ''; position: absolute; bottom: -1px; left: -5px; border: 6px solid transparent; border-top-color: #94a3b8; border-bottom: none; }
+
+    .run-section { max-width: 960px; margin: 60px auto 0; }
+    .run-section h2 { font-size: 16px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
+    .run-section p { font-size: 12px; color: #64748b; margin-bottom: 28px; }
+
+    .legend { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; margin-bottom: 36px; }
+    .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #475569; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+
+    .section-title { max-width: 960px; margin: 60px auto 20px; }
+    .section-title h2 { font-size: 16px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
+    .section-title p { font-size: 12px; color: #64748b; }
+
+    .panel-row { display: flex; gap: 20px; max-width: 960px; margin: 0 auto 50px; flex-wrap: wrap; }
+    .panel { flex: 1; min-width: 300px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 18px 20px; }
+    .panel h3 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #64748b; margin-bottom: 12px; }
+    table.model { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    table.model th, table.model td { text-align: left; padding: 5px 8px 5px 0; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+    table.model th { color: #94a3b8; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+    table.model td.col { font-family: 'SF Mono', Menlo, monospace; font-size: 12px; white-space: nowrap; }
+    table.model tr:last-child td { border-bottom: none; }
+    ul.logic { list-style: none; padding: 0; margin: 0; }
+    ul.logic li { padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 12.5px; line-height: 1.5; color: #334155; }
+    ul.logic li:last-child { border-bottom: none; }
+    ul.logic code, td code, p code { background: #f1f5f9; border-radius: 4px; padding: 1px 5px; font-family: 'SF Mono', Menlo, monospace; font-size: 11.5px; color: #0f172a; }
+
+    .keyinsight { max-width: 960px; margin: 0 auto 60px; background: #eff6ff; border-left: 4px solid #3b82f6; border-radius: 8px; padding: 14px 18px; font-size: 12.5px; color: #1e3a8a; }
+    .keyinsight strong { color: #1d4ed8; }
+  </style>
+</head>
+<body>
+
+<h1>Login &amp; Sessions</h1>
+<p class="subtitle">AgentFactory · stateless JWT auth, bcrypt-hashed passwords, one user = one tenant</p>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#93c5fd"></div>Frontend (React)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#86efac"></div>Router (FastAPI)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fde047"></div>Service (security.py)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#c4b5fd"></div>Repository</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fca5a5"></div>Database</div>
+</div>
+
+<!-- ═══════════ SIGNUP ═══════════ -->
+<div class="diagram">
+  <div class="col">
+    <div class="col-header frontend">Frontend</div>
+    <div class="box fe">
+      <div class="tag">Signup</div>
+      <div class="title">SignupPage.tsx</div>
+      <div class="file">POST /auth/signup</div>
+      <ul>
+        <li>{ email, password }</li>
+        <li>Auto-logs-in on success</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="connector"><div class="h-arrow"></div><div class="h-label">POST /auth/signup</div></div>
+
+  <div class="col">
+    <div class="col-header backend">Router</div>
+    <div class="box be">
+      <div class="tag">Router</div>
+      <div class="title">signup()</div>
+      <div class="file">routers/auth.py</div>
+      <ul>
+        <li>SignupRequest validator: ≥8 chars, 1 letter, 1 digit, 1 special</li>
+        <li>hash_password() → bcrypt cost=10</li>
+        <li>create_access_token()</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="connector"><div class="h-arrow"></div><div class="h-label">create_user()</div></div>
+
+  <div class="col">
+    <div class="col-header repo">Repository</div>
+    <div class="box repo">
+      <div class="tag">Repo</div>
+      <div class="title">create_user()</div>
+      <div class="file">repositories/user.py</div>
+      <ul>
+        <li>Creates User row</li>
+        <li>db.commit()</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="connector"><div class="h-arrow"></div><div class="h-label">INSERT</div></div>
+
+  <div class="col">
+    <div class="col-header db">PostgreSQL</div>
+    <div class="box db">
+      <div class="tag">Table</div>
+      <div class="title">users</div>
+      <ul>
+        <li>id (uuid)</li>
+        <li>email (unique)</li>
+        <li>password_hash</li>
+        <li>is_admin = false</li>
+        <li>created_at / updated_at</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ LOGIN ═══════════ -->
+<div class="run-section">
+  <h2>Login — POST /auth/login</h2>
+  <p>Same generic failure for a wrong password and an unknown email — no user-enumeration leak.</p>
+
+  <div class="diagram">
+    <div class="col">
+      <div class="col-header frontend">Frontend</div>
+      <div class="box fe">
+        <div class="tag">Login</div>
+        <div class="title">LoginPage.tsx</div>
+        <div class="file">POST /auth/login</div>
+        <ul><li>{ email, password }</li></ul>
+      </div>
+    </div>
+
+    <div class="connector"><div class="h-arrow"></div><div class="h-label">get_user_by_email</div></div>
+
+    <div class="col">
+      <div class="col-header repo">Repository</div>
+      <div class="box repo">
+        <div class="tag">Repo</div>
+        <div class="title">get_user_by_email()</div>
+        <div class="file">repositories/user.py</div>
+        <ul><li>SELECT * FROM users WHERE email = ?</li></ul>
+      </div>
+    </div>
+
+    <div class="connector"><div class="h-arrow"></div><div class="h-label">password_hash</div></div>
+
+    <div class="col">
+      <div class="col-header service">Service</div>
+      <div class="box svc">
+        <div class="tag">Service</div>
+        <div class="title">verify_password()</div>
+        <div class="file">security.py</div>
+        <ul><li>bcrypt.checkpw(password, password_hash)</li></ul>
+      </div>
+    </div>
+
+    <div class="connector"><div class="h-arrow"></div><div class="h-label">match?</div></div>
+
+    <div class="col">
+      <div class="box decision">Wrong password OR unknown email?</div>
+    </div>
+
+    <div class="connector"><div class="h-arrow"></div><div class="h-label">either way</div></div>
+
+    <div class="col">
+      <div class="col-header backend">Router</div>
+      <div class="box be" style="background:#fff1f2;border-color:#fca5a5;color:#7f1d1d;">
+        <div class="tag" style="background:#fecdd3;color:#b91c1c;">401</div>
+        <div class="title">Same response</div>
+        <ul><li>"Invalid email or password"</li><li>identical code path either way</li></ul>
+      </div>
+      <div class="v-arrow"></div>
+      <div class="box be">
+        <div class="tag">200</div>
+        <div class="title">Match → issue JWT</div>
+        <div class="file">create_access_token()</div>
+        <ul><li>{ sub: user.id, is_admin, exp }</li><li>signed HS256</li></ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ EVERY AUTHENTICATED REQUEST ═══════════ -->
+<div class="run-section">
+  <h2>Every authenticated request — is_admin is never cached</h2>
+  <p>The token proves identity; the database, re-read every time, decides authorization.</p>
+
+  <div class="diagram">
+    <div class="col">
+      <div class="col-header frontend">Frontend</div>
+      <div class="box fe">
+        <div class="tag">Any page</div>
+        <div class="title">req() in client.ts</div>
+        <div class="file">Authorization: Bearer &lt;jwt&gt;</div>
+        <ul><li>Attached to every API call</li></ul>
+      </div>
+    </div>
+
+    <div class="connector"><div class="h-arrow"></div><div class="h-label">get_current_user</div></div>
+
+    <div class="col">
+      <div class="col-header backend">Dependency</div>
+      <div class="box be">
+        <div class="tag">Dep</div>
+        <div class="title">get_current_user()</div>
+        <div class="file">deps.py</div>
+        <ul><li>decode_access_token()</li><li>algorithms=["HS256"] — explicit allowlist</li></ul>
+      </div>
+    </div>
+
+    <div class="connector"><div class="h-arrow"></div><div class="h-label">get_user_by_id(sub)</div></div>
+
+    <div class="col">
+      <div class="col-header repo">Repository</div>
+      <div class="box repo">
+        <div class="tag">Repo</div>
+        <div class="title">get_user_by_id()</div>
+        <div class="file">repositories/user.py</div>
+        <ul><li>fresh row, every request</li></ul>
+      </div>
+    </div>
+
+    <div class="connector"><div class="h-arrow"></div><div class="h-label">SELECT</div></div>
+
+    <div class="col">
+      <div class="col-header db">PostgreSQL</div>
+      <div class="box db">
+        <div class="tag">Table</div>
+        <div class="title">users</div>
+        <ul><li>returns is_admin as it is NOW</li><li>never the token's claim</li></ul>
+      </div>
+      <div class="v-arrow"></div>
+      <div class="box be">
+        <div class="tag">require_admin</div>
+        <div class="title">403 if !is_admin</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section-title">
+  <h2>Data model &amp; logic</h2>
+  <p>One table. No separate tenants table — <code>users.id</code> is the tenant boundary.</p>
+</div>
+
+<div class="panel-row">
+  <div class="panel">
+    <h3>users</h3>
+    <table class="model">
+      <tr><th>column</th><th>type</th><th>note</th></tr>
+      <tr><td class="col">id</td><td class="col">uuid pk</td><td>tenant key everywhere else</td></tr>
+      <tr><td class="col">email</td><td class="col">text unique</td><td>login identity</td></tr>
+      <tr><td class="col">password_hash</td><td class="col">text</td><td>bcrypt, cost = 10</td></tr>
+      <tr><td class="col">is_admin</td><td class="col">bool</td><td>seeded true for admin@capstone.com</td></tr>
+      <tr><td class="col">created_at / updated_at</td><td class="col">timestamptz</td><td></td></tr>
+    </table>
+  </div>
+  <div class="panel">
+    <h3>Logic</h3>
+    <ul class="logic">
+      <li><strong>Signup</strong> — password validator rejects weak passwords before <code>hash_password</code> ever runs.</li>
+      <li><strong>No enumeration leak</strong> — wrong password and unknown email hit the same code path, same message.</li>
+      <li><strong>Token</strong> — HS256 only; decode pins <code>algorithms=["HS256"]</code> explicitly.</li>
+      <li><strong>Authorization</strong> — <code>is_admin</code> is always re-read from Postgres, never trusted from the token payload.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="keyinsight">
+  <strong>Key insight:</strong> "one user per tenant" means <code>users.id</code> <em>is</em> the tenant
+  boundary — there's no multi-user-per-company model, so every <code>owner_id</code> filter across
+  the schema is a "mine vs. not mine" check, not a "my company's vs. not" check.
+</div>
+
+</body>
+</html>

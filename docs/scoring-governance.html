@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Scoring &amp; Governance — AgentFactory</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f8fafc;
+      color: #1e293b;
+      padding: 40px 24px 80px;
+    }
+
+    h1 { text-align: center; font-size: 22px; font-weight: 700; margin-bottom: 6px; color: #0f172a; }
+    .subtitle { text-align: center; font-size: 13px; color: #64748b; margin-bottom: 48px; }
+
+    .diagram { display: flex; gap: 0; justify-content: center; align-items: flex-start; flex-wrap: wrap; }
+    .col { display: flex; flex-direction: column; align-items: center; width: 220px; flex-shrink: 0; }
+    .col-header {
+      font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+      padding: 5px 14px; border-radius: 20px; margin-bottom: 20px;
+    }
+    .col-header.input   { background: #dbeafe; color: #1d4ed8; }
+    .col-header.compute { background: #fef9c3; color: #a16207; }
+    .col-header.repo    { background: #ede9fe; color: #6d28d9; }
+    .col-header.gate    { background: #dcfce7; color: #15803d; }
+
+    .connector { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 60px; flex-shrink: 0; padding-top: 56px; }
+    .h-arrow { width: 100%; height: 2px; background: #94a3b8; position: relative; }
+    .h-arrow::after { content: ''; position: absolute; right: -1px; top: -5px; border: 6px solid transparent; border-left-color: #94a3b8; border-right: none; }
+    .h-label { font-size: 10px; color: #64748b; margin-top: 4px; text-align: center; white-space: nowrap; }
+
+    .box {
+      width: 220px; border-radius: 10px; padding: 12px 14px; font-size: 12px; line-height: 1.5;
+      border: 1.5px solid; position: relative; cursor: default; transition: box-shadow .15s;
+    }
+    .box:hover { box-shadow: 0 4px 16px rgba(0,0,0,.12); }
+    .box .tag { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; margin-bottom: 5px; }
+    .box .title { font-weight: 600; font-size: 13px; margin-bottom: 3px; }
+    .box .formula { font-size: 10.5px; font-family: 'SF Mono', Menlo, monospace; opacity: .8; margin-top: 4px; line-height: 1.5; }
+
+    .box.in    { background: #eff6ff; border-color: #93c5fd; color: #1e3a8a; }
+    .box.in .tag { background: #bfdbfe; color: #1d4ed8; }
+    .box.calc  { background: #fefce8; border-color: #fde047; color: #713f12; }
+    .box.calc .tag { background: #fef08a; color: #a16207; }
+    .box.gov   { background: #f5f3ff; border-color: #c4b5fd; color: #3b0764; }
+    .box.gov .tag { background: #ddd6fe; color: #6d28d9; }
+    .box.result{ background: #f0fdf4; border-color: #86efac; color: #14532d; }
+    .box.result .tag { background: #bbf7d0; color: #15803d; }
+
+    .v-arrow { width: 2px; height: 20px; background: #94a3b8; position: relative; margin: 2px auto; }
+    .v-arrow::after { content: ''; position: absolute; bottom: -1px; left: -5px; border: 6px solid transparent; border-top-color: #94a3b8; border-bottom: none; }
+
+    .run-section { max-width: 1020px; margin: 60px auto 0; }
+    .run-section h2 { font-size: 16px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
+    .run-section p { font-size: 12px; color: #64748b; margin-bottom: 28px; }
+
+    .gate-row { display: flex; justify-content: center; gap: 20px; max-width: 900px; margin: 0 auto; flex-wrap: wrap; }
+    .gate-arrows { display: flex; justify-content: center; margin: 6px auto; max-width: 900px; }
+    .gate-arrows svg { display: block; }
+
+    .wide-box {
+      max-width: 480px; margin: 0 auto; border-radius: 10px; padding: 16px 20px;
+      background: #ecfdf5; border: 1.5px solid #34d399; color: #065f46; text-align: center;
+    }
+    .wide-box .title { font-weight: 700; font-size: 14px; margin-bottom: 4px; }
+    .wide-box .formula { font-family: 'SF Mono', Menlo, monospace; font-size: 11.5px; opacity: .85; }
+
+    .outcome-row { display: flex; justify-content: center; gap: 20px; margin-top: 24px; flex-wrap: wrap; }
+    .outcome {
+      width: 230px; border-radius: 10px; padding: 12px 14px; font-size: 12px; text-align: left;
+      border: 1.5px solid;
+    }
+    .outcome.ok { background: #f0fdf4; border-color: #86efac; color: #14532d; }
+    .outcome.no { background: #fff1f2; border-color: #fca5a5; color: #7f1d1d; }
+    .outcome .title { font-weight: 700; margin-bottom: 4px; }
+
+    .legend { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; margin-bottom: 36px; }
+    .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #475569; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+
+    .section-title { max-width: 1020px; margin: 60px auto 20px; }
+    .section-title h2 { font-size: 16px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
+    .section-title p { font-size: 12px; color: #64748b; }
+
+    .panel-row { display: flex; gap: 20px; max-width: 1020px; margin: 0 auto 40px; flex-wrap: wrap; }
+    .panel { flex: 1; min-width: 300px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 18px 20px; }
+    .panel h3 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #64748b; margin-bottom: 12px; }
+    table.model { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+    table.model th, table.model td { text-align: left; padding: 6px 10px 6px 0; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+    table.model th { color: #94a3b8; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+    table.model td.col { font-family: 'SF Mono', Menlo, monospace; font-size: 11.5px; }
+    table.model tr:last-child td { border-bottom: none; }
+    ul.logic { list-style: none; padding: 0; margin: 0; }
+    ul.logic li { padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 12.5px; line-height: 1.5; color: #334155; }
+    ul.logic li:last-child { border-bottom: none; }
+    ul.logic code, td code, p code { background: #f1f5f9; border-radius: 4px; padding: 1px 5px; font-family: 'SF Mono', Menlo, monospace; font-size: 11.5px; color: #0f172a; }
+
+    .example { max-width: 1020px; margin: 0 auto 40px; background: #f0fdf4; border: 1px dashed #86efac; border-radius: 10px; padding: 18px 22px; }
+    .example h4 { font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: #15803d; margin-bottom: 10px; }
+    .example pre { font-family: 'SF Mono', Menlo, monospace; font-size: 12.5px; line-height: 1.8; color: #14532d; margin: 0; white-space: pre-wrap; }
+
+    .keyinsight { max-width: 1020px; margin: 0 auto 60px; background: #f5f3ff; border-left: 4px solid #7c3aed; border-radius: 8px; padding: 14px 18px; font-size: 12.5px; color: #3b0764; }
+    .keyinsight strong { color: #6d28d9; }
+  </style>
+</head>
+<body>
+
+<h1>Scoring &amp; Governance</h1>
+<p class="subtitle">AgentFactory · three independent signals, AND-ed at the publish gate — never blended into one number</p>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#93c5fd"></div>Input (AgentConfigSchema / agent_runs)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fde047"></div>compute_score()</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#c4b5fd"></div>compute_governance_breakdown()</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#86efac"></div>Result</div>
+</div>
+
+<!-- ═══════════ SCORE COMPUTATION ═══════════ -->
+<div class="diagram">
+  <div class="col">
+    <div class="col-header input">Inputs</div>
+    <div class="box in">
+      <div class="tag">Config</div>
+      <div class="title">AgentConfigSchema</div>
+      <ul style="margin-top:5px;padding-left:14px;opacity:.85;"><li>tools[]</li><li>description</li><li>system_prompt</li></ul>
+    </div>
+    <div class="v-arrow"></div>
+    <div class="box in">
+      <div class="tag">Runs</div>
+      <div class="title">agent_runs</div>
+      <ul style="margin-top:5px;padding-left:14px;opacity:.85;"><li>run_count</li><li>ok_count</li></ul>
+    </div>
+  </div>
+
+  <div class="connector"><div class="h-arrow"></div><div class="h-label">compute_score()</div></div>
+
+  <div class="col">
+    <div class="col-header compute">4 components</div>
+    <div class="box calc">
+      <div class="tag">0&ndash;40</div>
+      <div class="title">Reliability</div>
+      <div class="formula">round(ok/run &times; 40 &times; confidence)<br>confidence = min(1, run/5)</div>
+    </div>
+    <div class="v-arrow"></div>
+    <div class="box calc">
+      <div class="tag">&minus;30..30</div>
+      <div class="title">Scope</div>
+      <div class="formula">30 &minus; &Sigma; cost(tool[1:])<br>read=1 / write=2 / destructive=3</div>
+    </div>
+    <div class="v-arrow"></div>
+    <div class="box calc">
+      <div class="tag">0&ndash;15</div>
+      <div class="title">Coverage</div>
+      <div class="formula">round(min(15, run&times;3) &times; ok/run)</div>
+    </div>
+    <div class="v-arrow"></div>
+    <div class="box calc">
+      <div class="tag">0&ndash;15</div>
+      <div class="title">Completeness</div>
+      <div class="formula">+5 desc&ge;20 · +5 prompt&ge;20 · +5 has tools</div>
+    </div>
+  </div>
+
+  <div class="connector"><div class="h-arrow"></div><div class="h-label">.total</div></div>
+
+  <div class="col">
+    <div class="col-header gate">Result</div>
+    <div class="box result">
+      <div class="tag">0&ndash;100</div>
+      <div class="title">Score</div>
+      <div class="formula">clamp(&Sigma; components, 0, 100)<br>need &ge; 70 to publish</div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ GOVERNANCE ═══════════ -->
+<div class="run-section">
+  <h2>Governance — compute_governance_breakdown()</h2>
+  <p>A completely separate axis: how safe the toolset is, independent of how many tools there are.</p>
+
+  <div class="diagram">
+    <div class="col">
+      <div class="col-header input">Inputs</div>
+      <div class="box in">
+        <div class="tag">Config</div>
+        <div class="title">tools[].permission_level</div>
+      </div>
+    </div>
+
+    <div class="connector"><div class="h-arrow"></div><div class="h-label">read_only_ratio</div></div>
+
+    <div class="col">
+      <div class="col-header repo">Governance</div>
+      <div class="box gov">
+        <div class="tag">A&ndash;F</div>
+        <div class="title">Grade thresholds</div>
+        <div class="formula">&ge;.8 A · &ge;.6 B · &ge;.4 C · &ge;.2 D · else F</div>
+      </div>
+      <div class="v-arrow"></div>
+      <div class="box gov">
+        <div class="tag">cap</div>
+        <div class="title">Capped at C if...</div>
+        <div class="formula">has_destructive AND tools &gt; 10<br>bigger blast radius</div>
+      </div>
+    </div>
+
+    <div class="connector"><div class="h-arrow"></div><div class="h-label">grade</div></div>
+
+    <div class="col">
+      <div class="col-header gate">Result</div>
+      <div class="box result">
+        <div class="tag">A&ndash;F</div>
+        <div class="title">Governance grade</div>
+        <div class="formula">need &ge; B to publish</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ THE GATE ═══════════ -->
+<div class="run-section">
+  <h2>The Publish Gate — three independent checks, AND-ed</h2>
+  <p>Never blended into one opaque number — a perfect score with ungated write tools still can't publish.</p>
+
+  <div class="gate-row">
+    <div class="box calc" style="width:230px;">
+      <div class="tag">Signal 1</div>
+      <div class="title">Score &ge; 70</div>
+      <div class="formula">SCORE_THRESHOLD</div>
+    </div>
+    <div class="box gov" style="width:230px;">
+      <div class="tag">Signal 2</div>
+      <div class="title">Governance &ge; B</div>
+      <div class="formula">GOVERNANCE_THRESHOLD</div>
+    </div>
+    <div class="box" style="width:230px;background:#f0fdf4;border-color:#86efac;color:#14532d;">
+      <div class="tag" style="background:#bbf7d0;color:#15803d;">Signal 3</div>
+      <div class="title">Write tools gated</div>
+      <div class="formula">check_write_tools_gated()<br>every write/destructive → requires_approval</div>
+    </div>
+  </div>
+
+  <div style="text-align:center;margin:18px 0 6px;color:#64748b;font-size:11px;">&darr; &darr; &darr;</div>
+
+  <div class="wide-box">
+    <div class="title">evaluate_publish_gate() — AND</div>
+    <div class="formula">can_publish = score_ok AND governance_ok AND write_tools_gated</div>
+  </div>
+
+  <div style="text-align:center;margin:6px 0;color:#64748b;font-size:11px;">&darr;</div>
+
+  <div class="outcome-row">
+    <div class="outcome ok">
+      <div class="title">can_publish = True</div>
+      Publish button enabled.
+    </div>
+    <div class="outcome no">
+      <div class="title">can_publish = False</div>
+      blocked_reason names the <em>first</em> failing check — never a vague "can't publish."
+    </div>
+  </div>
+</div>
+
+<div class="section-title">
+  <h2>Data model</h2>
+  <p>No dedicated table. Everything below is recomputed live, on every request.</p>
+</div>
+
+<div class="panel-row">
+  <div class="panel">
+    <table class="model">
+      <tr><th>source</th><th>feeds</th></tr>
+      <tr><td class="col">agents.config (jsonb)</td><td>tools[].permission_level / requires_approval, description, system_prompt &rarr; score + governance</td></tr>
+      <tr><td class="col">agent_runs</td><td>count(*), count(status='ok') &rarr; reliability + coverage</td></tr>
+      <tr><td class="col">agents.credentials + mcp_servers.status</td><td>trust checklist only — not scored</td></tr>
+    </table>
+  </div>
+  <div class="panel">
+    <h3>Trust checklist (surfaced, not scored)</h3>
+    <ul class="logic">
+      <li>Write/destructive tools require approval (reuses Signal 3)</li>
+      <li>Every attached MCP server reports <code>status == "healthy"</code></li>
+      <li>No stored credential value appears inside the prompt or any tool description — a live substring scan, not an assumption</li>
+      <li>Tested N times in the playground (<code>run_count</code>)</li>
+    </ul>
+  </div>
+</div>
+
+<div class="example">
+  <h4>Worked example — github_agent, live data (2026-09-19)</h4>
+  <pre>inputs        26 tools (all read) · 2/2 runs ok · description 17 chars
+reliability   round(2/2 × 40 × min(1, 2/5)) = round(40 × 0.4)        = 16
+scope         30 − (25 extra tools × 1/read)                        =  5
+coverage      round(min(15, 6) × 1.0)                                =  6
+completeness  desc&lt;20 (+0) + prompt≥20 (+5) + has tools (+5)         = 10
+─────────────────────────────────────────────────────────────────────────
+total         16 + 5 + 6 + 10                                       = 37 / 100</pre>
+</div>
+
+<div class="keyinsight">
+  <strong>Key insight:</strong> score and governance are deliberately never combined into one
+  number. A perfect score with ungated write tools still can't publish, and a perfect governance
+  grade on a broken agent still can't either — Rule 6's "a score that blocks nothing is decoration"
+  is enforced structurally, not by convention.
+</div>
+
+</body>
+</html>

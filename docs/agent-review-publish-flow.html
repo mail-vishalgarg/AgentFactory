@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent Review &amp; Publish Lifecycle — AgentFactory</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f8fafc;
+      color: #1e293b;
+      padding: 40px 24px 80px;
+    }
+
+    h1 { text-align: center; font-size: 22px; font-weight: 700; margin-bottom: 6px; color: #0f172a; }
+    .subtitle { text-align: center; font-size: 13px; color: #64748b; margin-bottom: 48px; }
+
+    .diagram { display: flex; gap: 0; justify-content: center; align-items: flex-start; flex-wrap: wrap; }
+    .col { display: flex; flex-direction: column; align-items: center; width: 220px; flex-shrink: 0; }
+    .col-header {
+      font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+      padding: 5px 14px; border-radius: 20px; margin-bottom: 20px;
+    }
+    .col-header.frontend { background: #dbeafe; color: #1d4ed8; }
+    .col-header.backend  { background: #dcfce7; color: #15803d; }
+    .col-header.service  { background: #fef9c3; color: #a16207; }
+    .col-header.repo     { background: #ede9fe; color: #6d28d9; }
+    .col-header.db       { background: #fee2e2; color: #b91c1c; }
+
+    .connector { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 60px; flex-shrink: 0; padding-top: 56px; }
+    .h-arrow { width: 100%; height: 2px; background: #94a3b8; position: relative; }
+    .h-arrow::after { content: ''; position: absolute; right: -1px; top: -5px; border: 6px solid transparent; border-left-color: #94a3b8; border-right: none; }
+    .h-label { font-size: 10px; color: #64748b; margin-top: 4px; text-align: center; white-space: nowrap; }
+
+    .box {
+      width: 210px; border-radius: 10px; padding: 12px 14px; font-size: 12px; line-height: 1.5;
+      border: 1.5px solid; position: relative; cursor: default; transition: box-shadow .15s;
+    }
+    .box:hover { box-shadow: 0 4px 16px rgba(0,0,0,.12); }
+    .box .tag { display: inline-block; font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; padding: 1px 6px; border-radius: 4px; margin-bottom: 5px; }
+    .box .title { font-weight: 600; font-size: 13px; margin-bottom: 3px; }
+    .box .file { font-size: 10px; font-family: 'SF Mono', Menlo, monospace; opacity: .7; margin-top: 4px; }
+    .box ul { margin-top: 5px; padding-left: 14px; color: inherit; opacity: .85; }
+    .box ul li { margin-bottom: 2px; }
+
+    .box.fe   { background: #eff6ff; border-color: #93c5fd; color: #1e3a8a; }
+    .box.fe .tag { background: #bfdbfe; color: #1d4ed8; }
+    .box.be   { background: #f0fdf4; border-color: #86efac; color: #14532d; }
+    .box.be .tag { background: #bbf7d0; color: #15803d; }
+    .box.svc  { background: #fefce8; border-color: #fde047; color: #713f12; }
+    .box.svc .tag { background: #fef08a; color: #a16207; }
+    .box.repo { background: #f5f3ff; border-color: #c4b5fd; color: #3b0764; }
+    .box.repo .tag { background: #ddd6fe; color: #6d28d9; }
+    .box.db   { background: #fff1f2; border-color: #fca5a5; color: #7f1d1d; }
+    .box.db .tag { background: #fecdd3; color: #b91c1c; }
+    .box.paused { background: #ecfdf5; border-color: #34d399; color: #065f46; }
+    .box.paused .tag { background: #a7f3d0; color: #047857; }
+
+    .box.decision {
+      background: #fff7ed; border-color: #fdba74; color: #7c2d12;
+      clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+      width: 170px; height: 100px; display: flex; align-items: center; justify-content: center;
+      text-align: center; font-size: 11px; font-weight: 600; padding: 0 28px;
+    }
+    .box.decision .tag, .box.decision .file { display: none; }
+
+    .v-arrow { width: 2px; height: 24px; background: #94a3b8; position: relative; margin: 0 auto; }
+    .v-arrow::after { content: ''; position: absolute; bottom: -1px; left: -5px; border: 6px solid transparent; border-top-color: #94a3b8; border-bottom: none; }
+
+    .run-section { max-width: 1000px; margin: 60px auto 0; }
+    .run-section h2 { font-size: 16px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
+    .run-section p { font-size: 12px; color: #64748b; margin-bottom: 28px; }
+
+    .legend { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; margin-bottom: 36px; }
+    .legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #475569; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 3px; }
+
+    .section-title { max-width: 1000px; margin: 60px auto 20px; }
+    .section-title h2 { font-size: 16px; font-weight: 700; color: #0f172a; margin-bottom: 4px; }
+    .section-title p { font-size: 12px; color: #64748b; }
+
+    .panel-row { display: flex; gap: 20px; max-width: 1000px; margin: 0 auto 50px; flex-wrap: wrap; }
+    .panel { flex: 1; min-width: 300px; background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 18px 20px; }
+    .panel h3 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #64748b; margin-bottom: 12px; }
+    table.model { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-bottom: 14px; }
+    table.model caption { text-align: left; font-family: 'SF Mono', Menlo, monospace; font-weight: 700; font-size: 12px; color: #6d28d9; margin-bottom: 6px; }
+    table.model th, table.model td { text-align: left; padding: 5px 8px 5px 0; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+    table.model th { color: #94a3b8; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+    table.model td.col { font-family: 'SF Mono', Menlo, monospace; font-size: 12px; white-space: nowrap; }
+    table.model tr:last-child td { border-bottom: none; }
+    ul.logic { list-style: none; padding: 0; margin: 0; }
+    ul.logic li { padding: 8px 0; border-bottom: 1px solid #f1f5f9; font-size: 12.5px; line-height: 1.5; color: #334155; }
+    ul.logic li:last-child { border-bottom: none; }
+    ul.logic code, td code, p code { background: #f1f5f9; border-radius: 4px; padding: 1px 5px; font-family: 'SF Mono', Menlo, monospace; font-size: 11.5px; color: #0f172a; }
+
+    .keyinsight { max-width: 1000px; margin: 0 auto 60px; background: #ecfdf5; border-left: 4px solid #10b981; border-radius: 8px; padding: 14px 18px; font-size: 12.5px; color: #065f46; }
+    .keyinsight strong { color: #047857; }
+  </style>
+</head>
+<body>
+
+<h1>Agent Review &amp; Publish Lifecycle</h1>
+<p class="subtitle">AgentFactory · a real LangGraph interrupt, not a database-row simulation</p>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:#93c5fd"></div>Frontend (React)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#86efac"></div>Router (FastAPI)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fde047"></div>Service (LangGraph)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#34d399"></div>Paused / checkpoint</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#c4b5fd"></div>Repository</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#fca5a5"></div>Database</div>
+</div>
+
+<!-- ═══════════ PUBLISH ═══════════ -->
+<div class="diagram">
+  <div class="col">
+    <div class="col-header frontend">Frontend</div>
+    <div class="box fe">
+      <div class="tag">Settings tab</div>
+      <div class="title">"Publish to Marketplace"</div>
+      <div class="file">AgentDetail.tsx</div>
+      <ul><li>POST /agents/{id}/publish</li></ul>
+    </div>
+  </div>
+
+  <div class="connector"><div class="h-arrow"></div><div class="h-label">evaluate_publish_gate</div></div>
+
+  <div class="col">
+    <div class="col-header backend">Router</div>
+    <div class="box be">
+      <div class="tag">Router</div>
+      <div class="title">publish_agent()</div>
+      <div class="file">routers/agents.py</div>
+      <ul><li>evaluate_publish_gate(config, run_count, ok_count)</li></ul>
+    </div>
+  </div>
+
+  <div class="connector"><div class="h-arrow"></div><div class="h-label">can_publish?</div></div>
+
+  <div class="col">
+    <div class="box decision">score≥70 AND governance≥B AND tools gated?</div>
+    <div class="v-arrow"></div>
+    <div class="box" style="background:#fff1f2;border-color:#fca5a5;color:#7f1d1d;width:170px;">
+      <div class="tag" style="background:#fecdd3;color:#b91c1c;">400</div>
+      <div class="title">Fails</div>
+      <ul><li>blocked_reason returned</li><li>agent stays Draft</li></ul>
+    </div>
+  </div>
+
+  <div class="connector"><div class="h-arrow"></div><div class="h-label">passes → ainvoke()</div></div>
+
+  <div class="col">
+    <div class="col-header service">Service</div>
+    <div class="box paused">
+      <div class="tag">LangGraph</div>
+      <div class="title">interrupt() → PAUSED</div>
+      <div class="file">services/publish_graph.py</div>
+      <ul>
+        <li>thread_id = uuid4()</li>
+        <li>checkpointed to Postgres</li>
+        <li>session-mode pooler :5432</li>
+        <li>survives a backend restart</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="connector"><div class="h-arrow"></div><div class="h-label">create_review()</div></div>
+
+  <div class="col">
+    <div class="col-header repo">Repository</div>
+    <div class="box repo">
+      <div class="tag">Repo</div>
+      <div class="title">create_review()</div>
+      <div class="file">repositories/publish_review.py</div>
+      <ul><li>tools sanitized first (Rule 5)</li></ul>
+    </div>
+  </div>
+
+  <div class="connector"><div class="h-arrow"></div><div class="h-label">INSERT</div></div>
+
+  <div class="col">
+    <div class="col-header db">PostgreSQL</div>
+    <div class="box db">
+      <div class="tag">Table</div>
+      <div class="title">publish_reviews</div>
+      <ul><li>thread_id (unique)</li><li>status = "pending"</li></ul>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ ADMIN DECIDES ═══════════ -->
+<div class="run-section">
+  <h2>Admin Review — resuming the paused graph</h2>
+  <p>Every decision resumes the exact same LangGraph run that paused at Publish time.</p>
+
+  <div class="diagram">
+    <div class="col">
+      <div class="col-header frontend">Frontend</div>
+      <div class="box fe">
+        <div class="tag">Admin</div>
+        <div class="title">AdminReview.tsx</div>
+        <div class="file">GET /marketplace/admin/pending</div>
+        <ul><li>Approve / Request changes / Reject</li></ul>
+      </div>
+    </div>
+
+    <div class="connector"><div class="h-arrow"></div><div class="h-label">decide()</div></div>
+
+    <div class="col">
+      <div class="col-header backend">Router</div>
+      <div class="box be">
+        <div class="tag">Router</div>
+        <div class="title">decide_listing()</div>
+        <div class="file">routers/marketplace.py</div>
+        <ul><li>POST /marketplace/admin/{id}/decide</li></ul>
+      </div>
+    </div>
+
+    <div class="connector"><div class="h-arrow"></div><div class="h-label">Command(resume=...)</div></div>
+
+    <div class="col">
+      <div class="col-header service">Service</div>
+      <div class="box paused">
+        <div class="tag">LangGraph</div>
+        <div class="title">graph.ainvoke(Command(resume))</div>
+        <ul><li>keyed by thread_id</li><li>resumes exactly where it paused</li><li>even across a restart</li></ul>
+      </div>
+    </div>
+
+    <div class="connector"><div class="h-arrow"></div><div class="h-label">mark_decided()</div></div>
+
+    <div class="col">
+      <div class="col-header repo">Repository</div>
+      <div class="box repo">
+        <div class="tag">Repo</div>
+        <div class="title">mark_decided()</div>
+        <div class="file">repositories/publish_review.py</div>
+        <ul><li>status → decision</li><li>decided_at = now()</li></ul>
+      </div>
+      <div class="v-arrow"></div>
+      <div class="box repo">
+        <div class="tag">if approved</div>
+        <div class="title">create_listing()</div>
+        <div class="file">repositories/marketplace.py</div>
+      </div>
+    </div>
+
+    <div class="connector"><div class="h-arrow"></div><div class="h-label">UPDATE / INSERT</div></div>
+
+    <div class="col">
+      <div class="col-header db">PostgreSQL</div>
+      <div class="box db">
+        <div class="tag">Table</div>
+        <div class="title">publish_reviews</div>
+        <ul><li>status updated</li></ul>
+      </div>
+      <div class="v-arrow"></div>
+      <div class="box db">
+        <div class="tag">only if approved</div>
+        <div class="title">marketplace_listings</div>
+        <ul><li>tools sanitized</li><li>status = "approved"</li></ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="section-title">
+  <h2>Data model</h2>
+  <p>Two tables. <code>publish_reviews</code> is the queryable index; <code>marketplace_listings</code> only ever holds already-approved rows.</p>
+</div>
+
+<div class="panel-row">
+  <div class="panel">
+    <table class="model">
+      <caption>publish_reviews</caption>
+      <tr><th>column</th><th>note</th></tr>
+      <tr><td class="col">thread_id</td><td>unique — the LangGraph checkpoint key</td></tr>
+      <tr><td class="col">agent_id, owner_id</td><td>FKs</td></tr>
+      <tr><td class="col">tools</td><td>jsonb, sanitized snapshot at submit time</td></tr>
+      <tr><td class="col">score, governance_grade</td><td>frozen at submit time</td></tr>
+      <tr><td class="col">status</td><td>pending · approved · rejected · changes_requested</td></tr>
+      <tr><td class="col">review_notes, decided_at</td><td>set on decide</td></tr>
+    </table>
+    <table class="model">
+      <caption>marketplace_listings</caption>
+      <tr><th>column</th><th>note</th></tr>
+      <tr><td class="col">publisher_owner_id</td><td>install-target owner, not "which company"</td></tr>
+      <tr><td class="col">tools</td><td>no credentials, no internal mcp_server_id</td></tr>
+      <tr><td class="col">install_count</td><td>incremented on install</td></tr>
+      <tr><td class="col">status</td><td>only ever created as "approved"</td></tr>
+    </table>
+  </div>
+  <div class="panel">
+    <h3>Logic</h3>
+    <ul class="logic">
+      <li><strong>Real interrupt, not simulated</strong> — <code>interrupt()</code> genuinely suspends the coroutine; "pending" isn't faked with a plain status column alone.</li>
+      <li><strong>Session-mode pooler required</strong> — <code>AsyncPostgresSaver</code>'s pipelined writes break against Supabase's transaction-mode pgbouncer (:6543); the checkpointer uses the session-mode pooler (:5432) instead.</li>
+      <li><strong>thread_id is the join key</strong> between the queryable row and the actual paused graph state.</li>
+      <li><strong>Rule 5 enforced at creation</strong> — the sanitized tool snapshot is built once, before the graph ever runs.</li>
+      <li><strong>Pool hardening</strong> — <code>max_idle=180</code> + <code>check=AsyncConnectionPool.check_connection</code>, since Supabase silently closes idle connections.</li>
+      <li><strong>The one deliberate isolation exception</strong> — admin routes read every owner's rows, gated entirely by <code>require_admin</code>.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="keyinsight">
+  <strong>Key insight:</strong> the pause is real, not simulated — verified by killing the backend
+  process mid-pause and resuming successfully after a fresh restart. <code>thread_id</code> is what
+  makes that possible: a stable pointer into Postgres-backed state that outlives the Python process.
+</div>
+
+</body>
+</html>
