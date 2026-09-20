@@ -36,6 +36,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+_extra_origins = [o for o in os.getenv("FRONTEND_ORIGIN", "").split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
@@ -46,6 +48,7 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
+        *_extra_origins,
     ],
     allow_credentials=True,
     allow_methods=["*"],
