@@ -494,7 +494,7 @@ function SettingsTab({ agent, scoreData, loading, onScoreChange }: SettingsTabPr
   }
 
   const checks = [
-    { label: 'Score', value: `${scoreData.score} / 70`, ok: scoreData.score_ok },
+    { label: 'Score', value: `${scoreData.score} / 100 (need 70)`, ok: scoreData.score_ok },
     { label: 'Governance', value: `${scoreData.governance_grade} / B`, ok: scoreData.governance_ok },
     { label: 'Approval gate', value: scoreData.write_tools_gated ? 'gated' : 'not gated', ok: scoreData.write_tools_gated },
   ]
