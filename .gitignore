@@ -31,5 +31,4 @@ Thumbs.db
 .vscode/
 *.swp
 
-# uv
-uv.lock
+# uv — uv.lock intentionally committed for reproducible builds
