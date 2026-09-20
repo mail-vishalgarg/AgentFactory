@@ -50,29 +50,24 @@ jobs:
           echo "IMAGE=$IMAGE" >> $GITHUB_ENV
 
       - name: Deploy backend to Cloud Run
+        env:
+          BACKEND_IMAGE: ${{ env.IMAGE }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          FRONTEND_ORIGIN: ${{ secrets.FRONTEND_ORIGIN }}
         run: |
-          gcloud run deploy ${{ env.BACKEND_SERVICE }} \
-            --image=$IMAGE \
-            --platform=managed \
-            --region=${{ env.REGION }} \
-            --project=${{ env.PROJECT_ID }} \
-            --allow-unauthenticated \
-            --port=8080 \
-            --set-env-vars="GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" \
-            --set-env-vars="GEMINI_MODEL=${{ secrets.GEMINI_MODEL }}" \
-            --set-env-vars="OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" \
-            --set-env-vars="OPENAI_MODEL=${{ secrets.OPENAI_MODEL }}" \
-            --set-env-vars="DATABASE_URL=${{ secrets.DATABASE_URL }}" \
-            --set-env-vars="SUPABASE_URL=${{ secrets.SUPABASE_URL }}" \
-            --set-env-vars="SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" \
-            --set-env-vars="SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}" \
-            --set-env-vars="JWT_SECRET=${{ secrets.JWT_SECRET }}" \
-            --set-env-vars="JWT_EXPIRE_MINUTES=60" \
-            --set-env-vars="FRONTEND_ORIGIN=${{ secrets.FRONTEND_ORIGIN }}" \
-            --min-instances=0 \
-            --max-instances=5 \
-            --memory=512Mi \
-            --cpu=1
+          envsubst < backend/cloudrun.yaml | gcloud run services replace - \
+            --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }}
+          gcloud run services add-iam-policy-binding ${{ env.BACKEND_SERVICE }} \
+            --region=${{ env.REGION }} --project=${{ env.PROJECT_ID }} \
+            --member="allUsers" --role="roles/run.invoker"
 
       - name: Print backend URL
         run: |
