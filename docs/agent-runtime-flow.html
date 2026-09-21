@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>Agent Runtime — Tool Execution Flow</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #0d1117;
+  color: #e6edf3;
+  padding: 48px 32px 80px;
+  min-height: 100vh;
+}
+
+h1 {
+  text-align: center;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #f0f6fc;
+  letter-spacing: -0.01em;
+  margin-bottom: 4px;
+}
+.subtitle {
+  text-align: center;
+  font-size: 0.72rem;
+  color: #484f58;
+  margin-bottom: 52px;
+  font-family: monospace;
+}
+
+/* ── main column ── */
+.flow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  max-width: 640px;
+  margin: 0 auto;
+  position: relative;
+}
+
+/* vertical spine */
+.flow::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0; bottom: 0;
+  width: 2px;
+  background: #21262d;
+  transform: translateX(-50%);
+  z-index: 0;
+}
+
+/* ── generic node ── */
+.node {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 420px;
+  border-radius: 10px;
+  padding: 13px 16px;
+  text-align: center;
+}
+.node-tag {
+  display: inline-block;
+  font-size: 0.58rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  border-radius: 3px;
+  padding: 2px 7px;
+  margin-bottom: 7px;
+}
+.node-title {
+  font-size: 0.82rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.node-sub {
+  font-size: 0.7rem;
+  opacity: 0.7;
+  line-height: 1.45;
+}
+.node-code {
+  font-family: 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 0.65rem;
+  background: rgba(0,0,0,0.35);
+  border-radius: 5px;
+  padding: 4px 8px;
+  margin-top: 8px;
+  display: block;
+  text-align: left;
+  color: #79c0ff;
+}
+
+/* node themes */
+.n-storage { background: #161b22; border: 1.5px solid #30363d; }
+.n-storage .node-tag { background: #21262d; color: #8b949e; }
+.n-storage .node-title { color: #8b949e; }
+
+.n-build { background: #0d1f3c; border: 1.5px solid #1f6feb; }
+.n-build .node-tag { background: #1f6feb; color: #fff; }
+.n-build .node-title { color: #79c0ff; }
+
+.n-graph { background: #1a0d3c; border: 1.5px solid #6e40c9; }
+.n-graph .node-tag { background: #6e40c9; color: #fff; }
+.n-graph .node-title { color: #d2a8ff; }
+
+.n-llm { background: #1c1208; border: 1.5px solid #d29922; }
+.n-llm .node-tag { background: #d29922; color: #000; }
+.n-llm .node-title { color: #e3b341; }
+
+.n-check { background: #0c1d17; border: 1.5px solid #238636; }
+.n-check .node-tag { background: #238636; color: #fff; }
+.n-check .node-title { color: #3fb950; }
+
+.n-done { background: #0f2318; border: 2px solid #3fb950; }
+.n-done .node-tag { background: #3fb950; color: #000; }
+.n-done .node-title { color: #3fb950; }
+
+/* ── arrow connector ── */
+.arrow {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  margin: 2px 0;
+}
+.arrow-line {
+  width: 2px;
+  height: 22px;
+  background: #30363d;
+}
+.arrow-head {
+  width: 0; height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 9px solid #30363d;
+}
+.arrow-label {
+  font-size: 0.6rem;
+  font-weight: 700;
+  color: #8b949e;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 4px;
+  padding: 2px 8px;
+  margin: 3px 0;
+  z-index: 1;
+}
+
+/* ── DECISION diamond ── */
+.decision-wrap {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 420px;
+}
+.diamond {
+  width: 220px;
+  height: 72px;
+  background: #1c160a;
+  border: 1.5px solid #d29922;
+  clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #e3b341;
+  text-align: center;
+  padding: 8px 24px;
+}
+
+/* ── BRANCH fork layout ── */
+.branch-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 24px;
+  width: 100%;
+  max-width: 640px;
+  margin: 0;
+}
+
+.branch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 1;
+  max-width: 260px;
+}
+.branch-label {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-radius: 99px;
+  padding: 3px 12px;
+  margin-bottom: 6px;
+}
+.label-read    { background: #0d3022; color: #3fb950; border: 1px solid #238636; }
+.label-write   { background: #2d1a00; color: #f0883e; border: 1px solid #d29922; }
+
+/* nodes inside branches */
+.branch-node {
+  width: 100%;
+  border-radius: 10px;
+  padding: 12px 14px;
+  text-align: center;
+}
+.bn-read {
+  background: #0d2219;
+  border: 1.5px solid #238636;
+}
+.bn-read .node-title { color: #3fb950; font-size: 0.78rem; font-weight: 700; }
+.bn-read .node-sub   { color: #6e7681; font-size: 0.68rem; }
+
+.bn-approve {
+  background: #2d1700;
+  border: 1.5px solid #f0883e;
+}
+.bn-approve .node-title { color: #f0883e; font-size: 0.78rem; font-weight: 700; }
+.bn-approve .node-sub   { color: #6e7681; font-size: 0.68rem; }
+
+.bn-api {
+  background: #0d1a2e;
+  border: 1.5px solid #388bfd;
+}
+.bn-api .node-title { color: #79c0ff; font-size: 0.75rem; font-weight: 700; }
+.bn-api .node-sub   { color: #484f58; font-size: 0.63rem; }
+.bn-api .node-code  { color: #a5d6ff; font-size: 0.62rem; margin-top: 6px; background: rgba(0,0,0,0.4); border-radius: 4px; padding: 4px 6px; display: block; text-align: left; font-family: monospace; }
+
+.branch-arrow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 2px 0;
+}
+.branch-arrow .arrow-line { height: 16px; }
+
+/* merge back */
+.merge-label {
+  font-size: 0.6rem;
+  color: #484f58;
+  text-align: center;
+  margin-bottom: 4px;
+  font-style: italic;
+}
+
+/* ── KEY DESIGN NOTE ── */
+.key-note {
+  max-width: 640px;
+  margin: 48px auto 0;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-left: 4px solid #6e40c9;
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+.key-note-title {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #8b949e;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.key-note-title::before {
+  content: '⚡';
+  font-size: 0.9rem;
+}
+.key-note-body {
+  font-size: 0.78rem;
+  color: #c9d1d9;
+  line-height: 1.65;
+}
+.key-note-body strong { color: #d2a8ff; }
+.key-note-body code {
+  font-family: monospace;
+  font-size: 0.72rem;
+  background: #21262d;
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: #79c0ff;
+}
+</style>
+</head>
+<body>
+
+<h1>Agent Runtime — Tool Execution Flow</h1>
+<p class="subtitle">backend/app/services/agent_builder.py</p>
+
+<div class="flow">
+
+  <!-- 1. Storage -->
+  <div class="node n-storage">
+    <span class="node-tag">PostgreSQL · agents table</span>
+    <div class="node-title">agents.config JSONB</div>
+    <div class="node-sub">ToolConfig[] — one entry per selected tool<br/>
+      (mcp_server_name, tool_name, input_schema, permission_level, requires_approval)</div>
+  </div>
+
+  <div class="arrow">
+    <div class="arrow-line"></div>
+    <div class="arrow-label">POST /agents/{id}/run → execute_agent()</div>
+    <div class="arrow-line"></div>
+    <div class="arrow-head"></div>
+  </div>
+
+  <!-- 2. Placeholder stubs -->
+  <div class="node n-build">
+    <span class="node-tag">agent_builder.py · _make_placeholder_tools()</span>
+    <div class="node-title">Build LangChain stub tools</div>
+    <div class="node-sub">Wraps every ToolConfig as a StructuredTool with correct name &amp; schema.<br/>
+      Stubs only describe tools — they don't call any API yet.</div>
+    <code class="node-code">make_placeholder_tool(server_name, tool_name, description, input_schema)</code>
+  </div>
+
+  <div class="arrow">
+    <div class="arrow-line"></div>
+    <div class="arrow-head"></div>
+  </div>
+
+  <!-- 3. LangGraph agent -->
+  <div class="node n-graph">
+    <span class="node-tag">LangGraph · create_react_agent()</span>
+    <div class="node-title">ReAct agent with interrupt gate</div>
+    <div class="node-sub">Agent is created with stub tools and paused before any tool executes.<br/>
+      LLM sees tool names + schemas but cannot run them directly.</div>
+    <code class="node-code">create_react_agent(llm, tools=stubs, interrupt_before=["tools"])</code>
+  </div>
+
+  <div class="arrow">
+    <div class="arrow-line"></div>
+    <div class="arrow-head"></div>
+  </div>
+
+  <!-- 4. LLM decision -->
+  <div class="node n-llm">
+    <span class="node-tag">LLM (Gemini / OpenAI)</span>
+    <div class="node-title">LLM picks a tool call</div>
+    <div class="node-sub">Reasons over user message + available tool names &amp; schemas.<br/>
+      Returns a structured tool_call (name + args). Graph pauses here.</div>
+    <code class="node-code">graph.ainvoke({"messages": [("human", message)]})</code>
+  </div>
+
+  <div class="arrow">
+    <div class="arrow-line"></div>
+    <div class="arrow-head"></div>
+  </div>
+
+  <!-- 5. Permission check -->
+  <div class="node n-check">
+    <span class="node-tag">agent_builder.py · _handle_graph_state()</span>
+    <div class="node-title">Inspect graph state — check permission_level</div>
+    <div class="node-sub">Reads pending tool calls from graph state.<br/>
+      Classifies each by permission_level and tool name tokens.</div>
+    <code class="node-code">_tool_needs_approval(tool_name)  →  bool</code>
+  </div>
+
+  <div class="arrow">
+    <div class="arrow-line"></div>
+    <div class="arrow-head"></div>
+  </div>
+
+  <!-- 6. DECISION diamond -->
+  <div class="decision-wrap">
+    <div class="diamond">permission_level?</div>
+  </div>
+
+  <div class="arrow" style="margin-top:2px;">
+    <div class="arrow-line" style="height:10px;"></div>
+  </div>
+
+  <!-- 7. Branch row -->
+  <div class="branch-row">
+
+    <!-- LEFT — READ -->
+    <div class="branch">
+      <span class="branch-label label-read">READ</span>
+      <div class="branch-node bn-read">
+        <div class="node-title">Auto-execute immediately</div>
+        <div class="node-sub">No human approval needed.<br/>Proceeds directly to real API call.</div>
+      </div>
+      <div class="branch-arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+      <div class="branch-node bn-api">
+        <div class="node-title">_execute_real_tool()</div>
+        <div class="node-sub">Routes by server_name substring match</div>
+        <code class="node-code">"github" → _execute_github_tool()
+"slack"  → _execute_slack_tool()
+"gitlab" → _execute_gitlab_tool()
+"tavily" → _execute_tavily_tool()</code>
+        <div class="node-sub" style="margin-top:8px;">httpx calls real REST API<br/>using stored credential token</div>
+      </div>
+    </div>
+
+    <!-- RIGHT — WRITE / DESTRUCTIVE -->
+    <div class="branch">
+      <span class="branch-label label-write">WRITE / DESTRUCTIVE</span>
+      <div class="branch-node bn-approve">
+        <div class="node-title">Pause — ask user to approve</div>
+        <div class="node-sub">Returns status: "pending_approval"<br/>
+          Stores (graph, config, creds) in _approval_registry[thread_id]</div>
+      </div>
+      <div class="branch-arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+      <div class="branch-node bn-approve" style="background:#1a0e00;border-color:#d29922;">
+        <div class="node-title" style="color:#d29922;">User approves or rejects</div>
+        <div class="node-sub">POST /agents/{id}/approve<br/>
+          Approved → resume_agent() → _execute_real_tool()<br/>
+          Rejected → ToolMessage("rejected") injected</div>
+      </div>
+      <div class="branch-arrow"><div class="arrow-line"></div><div class="arrow-head"></div></div>
+      <div class="branch-node bn-api">
+        <div class="node-title">_execute_real_tool()</div>
+        <div class="node-sub">Same routing as READ path<br/>httpx → real API with stored token</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 8. Merge back -->
+  <div class="arrow" style="margin-top:8px;">
+    <div class="arrow-line" style="height:16px; background:#30363d;"></div>
+    <div class="arrow-head"></div>
+  </div>
+
+  <!-- 9. Result injection -->
+  <div class="node n-graph">
+    <span class="node-tag">LangGraph · graph.update_state()</span>
+    <div class="node-title">Inject result as ToolMessage</div>
+    <div class="node-sub">API response string is wrapped as a ToolMessage and pushed back into the graph's message history.</div>
+    <code class="node-code">ToolMessage(content=real_result, tool_call_id=tc_id, name=tool_name)</code>
+  </div>
+
+  <div class="arrow">
+    <div class="arrow-line"></div>
+    <div class="arrow-label">graph.ainvoke(None) — resume LLM</div>
+    <div class="arrow-line"></div>
+    <div class="arrow-head"></div>
+  </div>
+
+  <!-- 10. LLM final answer -->
+  <div class="node n-done">
+    <span class="node-tag">LLM</span>
+    <div class="node-title">LLM generates final answer</div>
+    <div class="node-sub">Reads the ToolMessage result and writes a natural-language response.<br/>
+      Returned as AgentRunResponse { output, agent_id, status }.</div>
+    <code class="node-code" style="color:#56d364;">→ AgentRunResponse.output</code>
+  </div>
+
+</div><!-- .flow -->
+
+<!-- KEY DESIGN NOTE -->
+<div class="key-note">
+  <div class="key-note-title">Key Design Principle</div>
+  <div class="key-note-body">
+    <strong>The LLM never directly calls the MCP server.</strong><br/><br/>
+    LangGraph's <strong>stub tools</strong> give the LLM enough information (name + input schema) to
+    <em>decide</em> which tool to invoke and with what arguments — but the stubs themselves do nothing.
+    The actual HTTP call is always made by <code>_execute_real_tool()</code>, which runs <em>after</em>
+    the graph pauses at the <code>interrupt_before=["tools"]</code> gate.<br/><br/>
+    This separation means the backend controls every tool execution — enforcing the
+    <strong>approval gate</strong> for write/destructive operations — regardless of what the LLM requests.
+    The LLM is a <em>planner</em>, not an executor.
+  </div>
+</div>
+
+</body>
+</html>

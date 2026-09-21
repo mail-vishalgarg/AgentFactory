@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>LangChain vs LangGraph — How they work together</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #0d1117;
+  color: #e6edf3;
+  padding: 48px 32px 80px;
+}
+
+h1 {
+  text-align: center;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #f0f6fc;
+  margin-bottom: 6px;
+}
+.subtitle {
+  text-align: center;
+  font-size: 0.75rem;
+  color: #484f58;
+  margin-bottom: 48px;
+}
+
+/* ── TOP: roles summary ── */
+.roles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  max-width: 860px;
+  margin: 0 auto 48px;
+}
+.role-card {
+  border-radius: 10px;
+  padding: 18px 20px;
+}
+.rc-lc { background: #0d1f3c; border: 1.5px solid #1f6feb; }
+.rc-lg { background: #1a0d3c; border: 1.5px solid #6e40c9; }
+
+.role-card h2 {
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+.rc-lc h2 { color: #79c0ff; }
+.rc-lg h2 { color: #d2a8ff; }
+
+.role-card p {
+  font-size: 0.73rem;
+  color: #8b949e;
+  line-height: 1.55;
+  margin-bottom: 10px;
+}
+.role-tag {
+  display: inline-block;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-radius: 99px;
+  padding: 3px 10px;
+}
+.tag-lc { background: #1f6feb; color: #fff; }
+.tag-lg { background: #6e40c9; color: #fff; }
+
+/* ── MIDDLE: how they work together in this codebase ── */
+.section-title {
+  text-align: center;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #484f58;
+  margin-bottom: 20px;
+}
+
+/* ── FLOW canvas ── */
+.canvas {
+  display: grid;
+  grid-template-columns: 1fr 40px 1fr;
+  gap: 0;
+  max-width: 860px;
+  margin: 0 auto 56px;
+  align-items: start;
+}
+
+/* column headers */
+.col-header {
+  text-align: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 8px 0 16px;
+}
+.ch-lc { color: #79c0ff; }
+.ch-mid { color: #484f58; }
+.ch-lg { color: #d2a8ff; }
+
+/* node */
+.node {
+  border-radius: 9px;
+  padding: 11px 14px;
+  margin-bottom: 10px;
+  width: 100%;
+}
+.node-label {
+  font-size: 0.57rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  margin-bottom: 5px;
+  display: block;
+}
+.node-title { font-size: 0.78rem; font-weight: 700; margin-bottom: 3px; }
+.node-sub   { font-size: 0.68rem; color: #8b949e; line-height: 1.45; }
+.node-code  {
+  font-family: monospace;
+  font-size: 0.62rem;
+  background: rgba(0,0,0,0.4);
+  border-radius: 4px;
+  padding: 4px 7px;
+  margin-top: 7px;
+  display: block;
+  color: #79c0ff;
+  line-height: 1.5;
+}
+
+/* LangChain nodes */
+.n-lc { background: #0d1f3c; border: 1.5px solid #1f6feb; }
+.n-lc .node-label { color: #388bfd; }
+.n-lc .node-title { color: #79c0ff; }
+
+/* LangGraph nodes */
+.n-lg { background: #1a0d3c; border: 1.5px solid #6e40c9; }
+.n-lg .node-label { color: #a371f7; }
+.n-lg .node-title { color: #d2a8ff; }
+
+/* shared / result nodes */
+.n-shared { background: #161b22; border: 1.5px solid #30363d; }
+.n-shared .node-label { color: #8b949e; }
+.n-shared .node-title { color: #c9d1d9; }
+
+/* center column connector arrows */
+.mid-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 52px;
+  gap: 0;
+}
+.arrow-right {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+  height: 46px;
+}
+.arr-line { width: 14px; height: 1.5px; background: #30363d; }
+.arr-head-r {
+  width: 0; height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-left: 7px solid #30363d;
+}
+.arr-head-l {
+  width: 0; height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-right: 7px solid #30363d;
+}
+.arr-both {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  margin-bottom: 10px;
+  height: 56px;
+  justify-content: center;
+}
+.arr-text {
+  font-size: 0.55rem;
+  color: #484f58;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+.spacer-row { height: 20px; }
+
+/* down arrows within a column */
+.down-arrow {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0 auto 10px;
+  width: fit-content;
+}
+.d-line { width: 1.5px; height: 16px; background: #30363d; }
+.d-head {
+  width: 0; height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 7px solid #30363d;
+}
+
+/* ── BOTTOM: comparison table ── */
+.compare {
+  max-width: 860px;
+  margin: 0 auto 48px;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid #21262d;
+}
+.compare-header {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  background: #161b22;
+  border-bottom: 1px solid #21262d;
+}
+.compare-header div {
+  padding: 10px 14px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: #8b949e;
+}
+.compare-row {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr;
+  border-bottom: 1px solid #161b22;
+}
+.compare-row:last-child { border-bottom: none; }
+.compare-row div {
+  padding: 10px 14px;
+  font-size: 0.72rem;
+  line-height: 1.45;
+  border-right: 1px solid #161b22;
+}
+.compare-row div:last-child { border-right: none; }
+.compare-row:nth-child(odd) { background: #0d1117; }
+.compare-row:nth-child(even) { background: #0a0d12; }
+.feature-col { color: #8b949e; font-weight: 600; }
+.lc-col { color: #79c0ff; }
+.lg-col { color: #d2a8ff; }
+.tick-yes { color: #3fb950; font-weight: 700; }
+.tick-no  { color: #f85149; font-weight: 700; }
+.tick-partial { color: #d29922; font-weight: 700; }
+
+/* ── KEY NOTE ── */
+.key-note {
+  max-width: 860px;
+  margin: 0 auto;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-left: 4px solid #6e40c9;
+  border-radius: 8px;
+  padding: 18px 22px;
+}
+.key-note-title {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #8b949e;
+  margin-bottom: 12px;
+}
+.key-note-body {
+  font-size: 0.77rem;
+  color: #c9d1d9;
+  line-height: 1.65;
+}
+.key-note-body strong { color: #d2a8ff; }
+.key-note-body code {
+  font-family: monospace;
+  font-size: 0.7rem;
+  background: #21262d;
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: #79c0ff;
+}
+.key-note-body .lc { color: #79c0ff; font-weight: 600; }
+.key-note-body .lg { color: #d2a8ff; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>LangChain &amp; LangGraph — Roles &amp; How They Work Together</h1>
+<p class="subtitle">backend/app/services/agent_builder.py</p>
+
+<!-- ── ROLE CARDS ── -->
+<div class="roles">
+  <div class="role-card rc-lc">
+    <h2>LangChain — The Building Blocks</h2>
+    <p>Provides the individual primitives: the LLM wrapper, tool definitions, and message types. Think of it as the <em>parts</em> of the agent.</p>
+    <span class="role-tag tag-lc">Planner · Tools · LLM</span>
+  </div>
+  <div class="role-card rc-lg">
+    <h2>LangGraph — The Orchestrator</h2>
+    <p>Wraps LangChain primitives into a <em>stateful graph</em> that can pause, resume, checkpoint, and enforce approvals mid-run. It's the <em>engine</em>.</p>
+    <span class="role-tag tag-lg">State · Interrupt · Resume</span>
+  </div>
+</div>
+
+<!-- ── FLOW: side by side ── -->
+<p class="section-title">How they work together in this codebase</p>
+
+<div class="canvas">
+
+  <!-- HEADERS -->
+  <div class="col-header ch-lc">LangChain provides</div>
+  <div class="col-header ch-mid"></div>
+  <div class="col-header ch-lg">LangGraph uses</div>
+
+  <!-- ROW 1: LLM -->
+  <div>
+    <div class="node n-lc">
+      <span class="node-label">langchain_google_genai / langchain_openai</span>
+      <div class="node-title">LLM wrapper</div>
+      <div class="node-sub">ChatGoogleGenerativeAI or ChatOpenAI.<br/>Knows how to call the model API.</div>
+      <code class="node-code">_build_llm(config) → BaseChatModel</code>
+    </div>
+  </div>
+
+  <div class="mid-col">
+    <div class="arr-both">
+      <div style="display:flex;align-items:center;">
+        <div class="arr-line"></div><div class="arr-head-r"></div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="node n-lg">
+      <span class="node-label">langgraph.prebuilt</span>
+      <div class="node-title">create_react_agent(model=llm)</div>
+      <div class="node-sub">LangGraph takes the LLM and wires it into a graph node that reasons over tool calls.</div>
+      <code class="node-code">create_react_agent(model=llm, tools=stubs,<br/>  interrupt_before=["tools"])</code>
+    </div>
+  </div>
+
+  <!-- ROW 2: Tools -->
+  <div>
+    <div class="down-arrow"><div class="d-line"></div><div class="d-head"></div></div>
+    <div class="node n-lc">
+      <span class="node-label">langchain_core.tools</span>
+      <div class="node-title">StructuredTool stubs</div>
+      <div class="node-sub">Placeholder tools with correct name + input schema. The LLM uses these to decide what to call. No real API call happens here.</div>
+      <code class="node-code">make_placeholder_tool(server, name,<br/>  description, input_schema)</code>
+    </div>
+  </div>
+
+  <div class="mid-col" style="padding-top:82px;">
+    <div class="arr-both">
+      <div style="display:flex;align-items:center;">
+        <div class="arr-line"></div><div class="arr-head-r"></div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="down-arrow"><div class="d-line"></div><div class="d-head"></div></div>
+    <div class="node n-lg">
+      <span class="node-label">LangGraph graph node</span>
+      <div class="node-title">Registered as tools in the graph</div>
+      <div class="node-sub">LangGraph registers stubs so the LLM can see them. Graph PAUSES before running any — the interrupt gate fires first.</div>
+      <code class="node-code">interrupt_before=["tools"]<br/>↳ graph pauses here</code>
+    </div>
+  </div>
+
+  <!-- ROW 3: State / approval -->
+  <div>
+    <div class="down-arrow"><div class="d-line"></div><div class="d-head"></div></div>
+    <div class="node n-lc">
+      <span class="node-label">langchain_core.messages</span>
+      <div class="node-title">ToolMessage</div>
+      <div class="node-sub">Message type that carries the real API result back into the conversation history after the tool executes.</div>
+      <code class="node-code">ToolMessage(content=result,<br/>  tool_call_id=tc_id, name=name)</code>
+    </div>
+  </div>
+
+  <div class="mid-col" style="padding-top:82px;">
+    <div class="arr-both">
+      <div style="display:flex;align-items:center;">
+        <div class="arr-line"></div><div class="arr-head-r"></div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="down-arrow"><div class="d-line"></div><div class="d-head"></div></div>
+    <div class="node n-lg">
+      <span class="node-label">LangGraph · graph.update_state()</span>
+      <div class="node-title">Inject result back into graph state</div>
+      <div class="node-sub">After real API call completes, the ToolMessage is pushed back. LangGraph resumes the LLM to generate the final answer.</div>
+      <code class="node-code">graph.update_state(thread_config,<br/>  {"messages": tool_messages},<br/>  as_node="tools")</code>
+    </div>
+  </div>
+
+  <!-- ROW 4: Checkpointer -->
+  <div>
+    <div class="down-arrow"><div class="d-line"></div><div class="d-head"></div></div>
+    <div class="node n-shared">
+      <span class="node-label">Not provided by LangChain</span>
+      <div class="node-title">—</div>
+      <div class="node-sub">LangChain AgentExecutor has no concept of pausing, thread state, or resuming a run from outside.</div>
+    </div>
+  </div>
+
+  <div class="mid-col" style="padding-top:82px;">
+    <div class="arr-both">
+      <div style="display:flex;align-items:center;">
+        <div class="arr-line"></div><div class="arr-head-r"></div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="down-arrow"><div class="d-line"></div><div class="d-head"></div></div>
+    <div class="node n-lg">
+      <span class="node-label">langgraph.checkpoint.memory</span>
+      <div class="node-title">MemorySaver — thread checkpointing</div>
+      <div class="node-sub">Stores full graph state per thread_id. Enables the approval pattern: pause → store → user approves → resume exact state.</div>
+      <code class="node-code">MemorySaver()  +  thread_id = uuid4()<br/>_approval_registry[thread_id] = (...)</code>
+    </div>
+  </div>
+
+</div><!-- .canvas -->
+
+<!-- ── COMPARISON TABLE ── -->
+<p class="section-title">Feature comparison</p>
+
+<div class="compare">
+  <div class="compare-header">
+    <div>Feature</div>
+    <div>LangChain only</div>
+    <div>LangGraph (used here)</div>
+  </div>
+  <div class="compare-row">
+    <div class="feature-col">LLM integration</div>
+    <div class="lc-col tick-yes">✓ Native</div>
+    <div class="lg-col tick-yes">✓ Uses LangChain's LLM</div>
+  </div>
+  <div class="compare-row">
+    <div class="feature-col">Tool definitions</div>
+    <div class="lc-col tick-yes">✓ StructuredTool</div>
+    <div class="lg-col tick-yes">✓ Same StructuredTool</div>
+  </div>
+  <div class="compare-row">
+    <div class="feature-col">ReAct agent loop</div>
+    <div class="lc-col tick-partial">⚠ AgentExecutor (runs to completion)</div>
+    <div class="lg-col tick-yes">✓ create_react_agent (graph-based)</div>
+  </div>
+  <div class="compare-row">
+    <div class="feature-col">Pause before tool execution</div>
+    <div class="lc-col tick-no">✗ Not possible</div>
+    <div class="lg-col tick-yes">✓ interrupt_before=["tools"]</div>
+  </div>
+  <div class="compare-row">
+    <div class="feature-col">Human approval gate</div>
+    <div class="lc-col tick-no">✗ Would need custom wrapper</div>
+    <div class="lg-col tick-yes">✓ Built into graph state</div>
+  </div>
+  <div class="compare-row">
+    <div class="feature-col">Thread-level state (pause &amp; resume)</div>
+    <div class="lc-col tick-no">✗ Not supported</div>
+    <div class="lg-col tick-yes">✓ MemorySaver + thread_id</div>
+  </div>
+  <div class="compare-row">
+    <div class="feature-col">Inject results mid-run externally</div>
+    <div class="lc-col tick-no">✗ Not possible</div>
+    <div class="lg-col tick-yes">✓ graph.update_state()</div>
+  </div>
+  <div class="compare-row">
+    <div class="feature-col">Complexity</div>
+    <div class="lc-col" style="color:#3fb950;">Lower — simpler to set up</div>
+    <div class="lg-col" style="color:#d29922;">Higher — more powerful</div>
+  </div>
+</div>
+
+<!-- ── KEY NOTE ── -->
+<div class="key-note">
+  <div class="key-note-title">⚡ Key Design Principle</div>
+  <div class="key-note-body">
+    <span class="lc">LangChain</span> is the <strong>parts supplier</strong> — it provides the LLM, the tool schema wrappers, and the message types.<br/>
+    <span class="lg">LangGraph</span> is the <strong>engine</strong> — it takes those parts and runs them inside a stateful graph that can pause, checkpoint, and resume.<br/><br/>
+    The critical feature that made LangGraph necessary here is <code>interrupt_before=["tools"]</code>. Without it, there is no way to intercept a tool call, check if it's a write/destructive operation, and ask the user to approve it before it runs. LangChain's <code>AgentExecutor</code> runs straight through to the end — you can't stop it in the middle.
+  </div>
+</div>
+
+</body>
+</html>
