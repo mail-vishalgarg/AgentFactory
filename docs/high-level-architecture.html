@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AgentFactory — End-to-End Vertical Architecture Flowchart</title>
+  <!-- Mermaid.js with responsive auto-fit configuration -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      securityLevel: 'loose',
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true,
+        curve: 'basis'
+      }
+    });
+  </script>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --card-bg: #ffffff;
+      --border: #cbd5e1;
+      --border-light: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #475569;
+      --primary: #059669;
+      --primary-light: #ecfdf5;
+      --blue: #2563eb;
+      --blue-light: #eff6ff;
+      --purple: #7c3aed;
+      --purple-light: #f5f3ff;
+      --amber: #d97706;
+      --amber-light: #fffbeb;
+      --red: #dc2626;
+      --red-light: #fef2f2;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 24px 16px 80px;
+      overflow-x: hidden; /* Zero horizontal page scrolling */
+    }
+
+    .container {
+      max-width: 900px; /* Comfortable reading width, fits on standard laptop & tablet without scrolling */
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 24px;
+      padding: 26px 20px;
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+
+    .pill-badge {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 4px 14px;
+      border-radius: 9999px;
+      background: var(--primary-light);
+      color: var(--primary);
+      border: 1px solid #a7f3d0;
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      font-size: 26px;
+      font-weight: 800;
+      color: #0f172a;
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+
+    .lead {
+      color: var(--text-muted);
+      font-size: 14.5px;
+      line-height: 1.6;
+    }
+
+    /* Jump nav */
+    .jump-nav {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+
+    .jump-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      color: #334155;
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      text-decoration: none;
+      transition: all 0.15s ease;
+    }
+
+    .jump-link:hover {
+      background: #0f172a;
+      color: #ffffff;
+    }
+
+    /* Cards */
+    .card {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+      width: 100%;
+    }
+
+    .card-title {
+      font-size: 20px;
+      font-weight: 800;
+      color: #0f172a;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 10px;
+      border-bottom: 1px solid var(--border-light);
+      padding-bottom: 12px;
+    }
+
+    /* Responsive Mermaid Wrapper */
+    .mermaid-wrapper {
+      width: 100%;
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px;
+      overflow: hidden; /* Prevents overflow */
+      display: flex;
+      justify-content: center;
+    }
+
+    .mermaid {
+      width: 100% !important;
+      max-width: 100% !important;
+      text-align: center;
+    }
+
+    .mermaid svg {
+      width: 100% !important;
+      height: auto !important;
+      max-width: 100% !important;
+    }
+
+    /* Zoom / Controls bar */
+    .controls-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .btn-action {
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      color: #0f172a;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .btn-action:hover {
+      background: #e2e8f0;
+    }
+
+    /* Raw Code Block */
+    pre.code-block {
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 14px;
+      border-radius: 8px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      line-height: 1.45;
+      overflow-x: auto;
+      max-height: 280px;
+      margin-top: 12px;
+    }
+
+    /* Pure Single-Column Vertical Flowchart Boxes */
+    .vertical-timeline {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      width: 100%;
+      margin: 10px 0;
+    }
+
+    .timeline-node {
+      width: 100%;
+      background: #ffffff;
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 18px;
+      position: relative;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+
+    .timeline-node.entry {
+      border-left: 6px solid #0f172a;
+      background: #f8fafc;
+    }
+
+    .timeline-node.auth {
+      border-left: 6px solid var(--amber);
+      background: #fffdf5;
+    }
+
+    .timeline-node.user {
+      border-left: 6px solid var(--blue);
+      background: #fcfdff;
+    }
+
+    .timeline-node.interrupt {
+      border: 2px dashed #d97706;
+      border-left: 6px solid #d97706;
+      background: #fffbeb;
+    }
+
+    .timeline-node.admin {
+      border-left: 6px solid var(--purple);
+      background: #fdfcff;
+    }
+
+    .timeline-node.gate {
+      border-left: 6px solid var(--red);
+      background: #fef2f2;
+    }
+
+    .timeline-node.market {
+      border: 2px solid var(--primary);
+      border-left: 8px solid var(--primary);
+      background: #f0fdf4;
+    }
+
+    .node-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 5px;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+
+    .node-title {
+      font-size: 14.5px;
+      font-weight: 800;
+      color: #0f172a;
+    }
+
+    .node-pill {
+      font-size: 10.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .pill-gray { background: #e2e8f0; color: #334155; }
+    .pill-blue { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+    .pill-purple { background: #f5f3ff; color: #6d28d9; border: 1px solid #ddd6fe; }
+    .pill-amber { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+    .pill-green { background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; }
+    .pill-red { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+
+    .node-code {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: #64748b;
+      margin-bottom: 4px;
+    }
+
+    .node-text {
+      font-size: 13px;
+      color: #334155;
+      line-height: 1.5;
+    }
+
+    .node-text ul {
+      margin-left: 18px;
+      margin-top: 4px;
+    }
+
+    .node-text li {
+      margin-bottom: 2px;
+    }
+
+    /* Vertical Moving Arrow Connectors */
+    .arrow-unit {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 0;
+      position: relative;
+      width: 100%;
+    }
+
+    .arrow-tag {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 10px;
+      border-radius: 9999px;
+      margin-bottom: 3px;
+      background: #f1f5f9;
+      color: #475569;
+      border: 1px solid #cbd5e1;
+    }
+
+    .laser-stem {
+      width: 3px;
+      height: 20px;
+      border-radius: 2px;
+      background: repeating-linear-gradient(
+        to bottom,
+        #0f172a 0px,
+        #0f172a 5px,
+        #cbd5e1 5px,
+        #cbd5e1 10px
+      );
+      background-size: 100% 20px;
+      animation: laserFlow 0.75s linear infinite;
+    }
+
+    .laser-stem.blue {
+      background: repeating-linear-gradient(to bottom, #2563eb 0px, #2563eb 5px, #cbd5e1 5px, #cbd5e1 10px);
+    }
+    .laser-stem.purple {
+      background: repeating-linear-gradient(to bottom, #7c3aed 0px, #7c3aed 5px, #cbd5e1 5px, #cbd5e1 10px);
+    }
+    .laser-stem.amber {
+      background: repeating-linear-gradient(to bottom, #d97706 0px, #d97706 5px, #cbd5e1 5px, #cbd5e1 10px);
+    }
+    .laser-stem.green {
+      background: repeating-linear-gradient(to bottom, #059669 0px, #059669 5px, #cbd5e1 5px, #cbd5e1 10px);
+    }
+
+    .arrow-pointer {
+      width: 0;
+      height: 0;
+      border-left: 4px solid transparent;
+      border-right: 4px solid transparent;
+      border-top: 6px solid #0f172a;
+      margin-top: -1px;
+    }
+
+    .arrow-pointer.blue { border-top-color: #2563eb; }
+    .arrow-pointer.purple { border-top-color: #7c3aed; }
+    .arrow-pointer.amber { border-top-color: #d97706; }
+    .arrow-pointer.green { border-top-color: #059669; }
+
+    @keyframes laserFlow {
+      0% { background-position: 0 0; }
+      100% { background-position: 0 20px; }
+    }
+
+    .track-separator {
+      width: 100%;
+      border-top: 2px dashed #cbd5e1;
+      margin: 20px 0;
+      text-align: center;
+      position: relative;
+    }
+
+    .track-separator span {
+      background: #f8fafc;
+      padding: 0 12px;
+      font-size: 11.5px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      position: relative;
+      top: -10px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <span class="pill-badge">Zero Horizontal Scrolling &bull; Strictly Vertical Flow</span>
+      <h1>AgentFactory End-to-End System Architecture</h1>
+      <p class="lead">
+        A 100% vertical, fully responsive flowchart mapping every step of the lifecycle: authentication, role branch (User vs Admin), approved MCP registry, encrypted PAT connection, agent builder prompt &amp; tool selection/deselection, token interruption/resume, playground testing, automated scoring, admin threshold governance, and direct community marketplace reuse.
+      </p>
+
+      <div class="jump-nav">
+        <a href="#mermaid-card" class="jump-link">📊 Native Mermaid Flowchart</a>
+        <a href="#boxes-card" class="jump-link">📦 Detailed Boxes &amp; Animated Moving Arrows</a>
+        <a href="#raw-code-card" class="jump-link">📋 Copy Raw Mermaid Code</a>
+      </div>
+    </header>
+
+    <!-- ========================================================================= -->
+    <!-- SECTION 1: RESPONSIVE NATIVE MERMAID FLOWCHART (ZERO HORIZONTAL SCROLL) -->
+    <!-- ========================================================================= -->
+    <div class="card" id="mermaid-card">
+      <div class="card-title">
+        <span>📊 Native Mermaid Flowchart (Auto-Fit &amp; Vertical)</span>
+        <button class="btn-action" onclick="copyMermaid()">📋 Copy Mermaid Code</button>
+      </div>
+      <div class="controls-bar">
+        <span style="font-size: 12.5px; color: var(--text-muted);">
+          100% responsive vector diagram. Scales automatically to fit your screen with no side-to-side scrolling.
+        </span>
+      </div>
+
+      <div class="mermaid-wrapper">
+        <pre class="mermaid">
+flowchart TD
+    %% Global Styles
+    classDef startStyle fill:#0f172a,stroke:#334155,stroke-width:2px,color:#ffffff,font-weight:bold
+    classDef authStyle fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f,font-weight:bold
+    classDef userStyle fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#1e3a8a
+    classDef adminStyle fill:#faf5ff,stroke:#7c3aed,stroke-width:2px,color:#4c1d95
+    classDef pauseStyle fill:#fffbeb,stroke:#d97706,stroke-width:2px,stroke-dasharray: 4 4,color:#92400e
+    classDef gateStyle fill:#fef2f2,stroke:#dc2626,stroke-width:2px,color:#7f1d1d,font-weight:bold
+    classDef successStyle fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#064e3b,font-weight:bold
+    classDef marketStyle fill:#f0fdf4,stroke:#059669,stroke-width:3px,color:#064e3b,font-weight:bold
+
+    %% 1. ENTRY & AUTH
+    S1(["👤 1. User or Admin visits Platform"]):::startStyle
+    S2["🔐 2. Enter Email & Password (LoginPage.tsx)<br/>• Submits to FastAPI /auth/login"]:::authStyle
+    S3{"🔍 3. Database Check (bcrypt & is_admin)<br/>Role Identification"}:::authStyle
+
+    S1 --> S2
+    S2 --> S3
+
+    %% 2. ROLE BRANCHING
+    S3 -->|is_admin == false| U1["📋 4A. Lands on MCP Registry (MCPRegistry.tsx)<br/>• Views ONLY Admin-approved & published servers"]:::userStyle
+    S3 -->|is_admin == true| A1["👑 4B. Admin Identified (AdminReview.tsx)<br/>• Unlocks '+ Register MCP Server' & Portal"]:::adminStyle
+
+    %% 3. USER WORKFLOW
+    U1 --> U2{"❓ Tokens connected?"}:::userStyle
+    U2 -->|No / First time| U3["🔑 5A. Connections Page (Connections.tsx)<br/>• Connects PATs (GitHub, Slack, GitLab)<br/>• Live API test probe validates keys<br/>• Tokens ENCRYPTED & HIDDEN in UI"]:::userStyle
+    U2 -->|Yes| U4["🛠️ 6A. Agent Builder Page (AgentBuilder.tsx)<br/>• Inputs Agent Name & System Prompt<br/>• Selects required MCP servers/tools<br/>• DESELECTS unneeded tools"]:::userStyle
+    U3 --> U4
+
+    U4 --> U5{"🔍 All tokens active<br/>for selected tools?"}:::userStyle
+    U5 -->|Missing Tokens| U6["⏸️ 7A. INTERRUPT GATE<br/>• Workflow paused: prompts for token<br/>• User inputs PAT & validated live<br/>▶️ RESUMES automatically!"]:::pauseStyle
+    U6 --> U7["💾 8A. Agent Created (POST /agents)<br/>• Saved to DB under owner_id<br/>• Appears in My Agents Page"]:::userStyle
+    U5 -->|All Active| U7
+
+    U7 --> U8["📊 9A. My Agents Overview Tab (AgentDetail.tsx)<br/>• Renders visual backend flowchart<br/>• Shows ReAct loop & MCP tool bindings"]:::userStyle
+    U8 --> U9["🧪 10A. Playground Testing (Playground.tsx)<br/>• Tests prompts & use cases with chat<br/>• Backend injects PAT JIT (zero LLM leaks)<br/>• Human-in-the-Loop for write actions"]:::userStyle
+    U9 --> U10["📈 11A. Automated Scoring Engine (scoring.py)<br/>• Evaluates: Tool count, Prompt length,<br/>Reliability & Test execution history<br/>• Computes Score (0-100) & Grade (A-F)"]:::userStyle
+    U10 --> U11["🚀 12A. User Submits for Publishing<br/>• POST /marketplace/publish<br/>• LangGraph calls interrupt()<br/>• State paused durably in PostgreSQL"]:::userStyle
+
+    %% 4. ADMIN WORKFLOW
+    A1 --> A2["➕ 5B. Admin Registers New MCP Server<br/>• Inputs Name, SSE/stdio URL, provider"]:::adminStyle
+    A2 --> A3["🔬 6B. Test Probe with Admin's Own PAT<br/>• Admin provides personal PAT token<br/>• Live handshake tests tool introspection"]:::adminStyle
+    A3 --> A4["✅ 7B. Server Approved & Published<br/>• Commits to mcp_servers & mcp_tools<br/>• Instantly visible on MCP Registry!"]:::successStyle
+    A4 -.->|Now available in catalog| U1
+
+    %% 5. ADMIN REVIEW & GOVERNANCE GATE
+    U11 --> R1["📑 13. Admin Review Portal (AdminReview.tsx)<br/>• Inspects pending agent submission<br/>• Reviews prompt, tool bindings & score"]:::adminStyle
+    A1 --> R1
+    
+    R1 --> R2{"⚖️ 14. Score Evaluation Gate<br/>Does Score >= 70?"}:::gateStyle
+    
+    R2 -->|< 70: Fails Gate| R3["❌ 15A. REJECT AGENT<br/>• Resume LangGraph: Command(resume='rejected')<br/>• Sent back to user with feedback!"]:::gateStyle
+    R3 -.->|User refines prompt & tools| U4
+
+    R2 -->|>= 70: Passes Gate| R4["✅ 15B. APPROVE AGENT<br/>• Resume LangGraph: Command(resume='approved')<br/>• Status set to Published"]:::successStyle
+
+    %% 6. COMMUNITY MARKETPLACE REUSE
+    R4 --> M1["🏪 16. Community Marketplace (/marketplace)<br/>• Visible to all workspace members<br/>• Trust Badge, Score, Grade & Tools"]:::marketStyle
+    
+    M1 --> M2["⚡ 17. DIRECT AGENT REUSE (Zero Rebuilding!)<br/>• ANY USER can discover and use this agent directly<br/>• No need to build or configure again!<br/>• Runs with user's own connected PAT tokens"]:::marketStyle
+        </pre>
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- SECTION 2: PURE SINGLE-COLUMN BOXES & ANIMATED MOVING ARROWS -->
+    <!-- ========================================================================= -->
+    <div class="card" id="boxes-card">
+      <div class="card-title">
+        <span>📦 Complete Single-Column Vertical Flow (Boxes &amp; Moving Arrows)</span>
+      </div>
+      <p style="font-size: 13.5px; color: var(--text-muted); margin-bottom: 20px;">
+        Linear top-to-bottom vertical progression with code bindings, status checks, and moving laser lines:
+      </p>
+
+      <div class="vertical-timeline">
+
+        <!-- 1. ENTRY -->
+        <div class="timeline-node entry">
+          <div class="node-header">
+            <span class="node-title">1. User / Admin Visits Platform Login Page</span>
+            <span class="node-pill pill-gray">LoginPage.tsx</span>
+          </div>
+          <div class="node-code">POST /auth/login { email, password }</div>
+          <div class="node-text">
+            Enters email address and password. Submits to FastAPI authentication gateway.
+          </div>
+        </div>
+
+        <div class="arrow-unit">
+          <span class="arrow-tag">Bcrypt Hash Verification</span>
+          <div class="laser-stem"></div>
+          <div class="arrow-pointer"></div>
+        </div>
+
+        <!-- 2. ROLE CHECK -->
+        <div class="timeline-node auth">
+          <div class="node-header">
+            <span class="node-title">2. Database Authentication &amp; Role Check</span>
+            <span class="node-pill pill-amber">users.is_admin</span>
+          </div>
+          <div class="node-code">SELECT id, email, hashed_password, is_admin FROM users WHERE email = ?</div>
+          <div class="node-text">
+            Checks password hash. Identifies whether the account is a <strong>Standard User</strong> (<code>is_admin: false</code>) or <strong>Platform Administrator</strong> (<code>is_admin: true</code>). Mints signed HS256 JWT.
+          </div>
+        </div>
+
+        <div class="track-separator">
+          <span style="color: var(--blue);">Track 1: Standard Workspace User Path</span>
+        </div>
+
+        <!-- U1 -->
+        <div class="timeline-node user">
+          <div class="node-header">
+            <span class="node-title">3A. Lands on MCP Registry Page</span>
+            <span class="node-pill pill-blue">MCPRegistry.tsx</span>
+          </div>
+          <div class="node-code">GET /mcp/servers (is_approved = true)</div>
+          <div class="node-text">
+            User sees the catalog of MCP servers that are <strong>already approved and published by the Admin</strong> (GitHub, Slack, GitLab, Jira, Postgres).
+          </div>
+        </div>
+
+        <div class="arrow-unit">
+          <span class="arrow-tag">First Time / PAT Setup</span>
+          <div class="laser-stem blue"></div>
+          <div class="arrow-pointer blue"></div>
+        </div>
+
+        <!-- U2 -->
+        <div class="timeline-node user">
+          <div class="node-header">
+            <span class="node-title">4A. Connections Page (Encrypted PATs)</span>
+            <span class="node-pill pill-blue">Connections.tsx</span>
+          </div>
+          <div class="node-code">POST /connections/validate &amp; save</div>
+          <div class="node-text">
+            User clicks <strong>PAT</strong> link on MCP Registry:
+            <ul>
+              <li>Inputs personal access tokens (GitHub, Slack, GitLab, Tavily).</li>
+              <li>Live synchronous API test probe verifies keys immediately (<code>/user</code>, <code>auth.test</code>).</li>
+              <li><strong>Tokens are encrypted in DB and MASKED in UI (hidden from view).</strong></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="arrow-unit">
+          <span class="arrow-tag">Navigate to Builder</span>
+          <div class="laser-stem blue"></div>
+          <div class="arrow-pointer blue"></div>
+        </div>
+
+        <!-- U3 -->
+        <div class="timeline-node user">
+          <div class="node-header">
+            <span class="node-title">5A. Agent Builder Page</span>
+            <span class="node-pill pill-blue">AgentBuilder.tsx</span>
+          </div>
+          <div class="node-code">POST /agents { name, prompt, tools }</div>
+          <div class="node-text">
+            User builds custom agent based on requirements:
+            <ul>
+              <li>Writes custom <strong>System Prompt</strong> and instructions.</li>
+              <li><strong>Selects required MCP servers and tools</strong> from the approved catalog.</li>
+              <li><strong>Deselects tools that are NOT required</strong> (preventing tool sprawl).</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="arrow-unit">
+          <span class="arrow-tag">Check Tool Tokens</span>
+          <div class="laser-stem blue"></div>
+          <div class="arrow-pointer blue"></div>
+        </div>
+
+        <!-- U4: INTERRUPT -->
+        <div class="timeline-node interrupt">
+          <div class="node-header">
+            <span class="node-title">6A. Token Interruption &amp; Resume Gate</span>
+            <span class="node-pill pill-amber">Pause &amp; Resume</span>
+          </div>
+          <div class="node-code">GET /connections/check?tools=selected</div>
+          <div class="node-text">
+            System checks if tokens exist for all selected tools:
+            <ul>
+              <li><strong>If token missing:</strong> Creation flow is <strong>INTERRUPTED</strong> (paused); modal prompts user for token.</li>
+              <li>User inputs token ➔ verified on the spot.</li>
+              <li><strong>RESUMES</strong> immediately once token is provided!</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="arrow-unit">
+          <span class="arrow-tag">Persist Agent</span>
+          <div class="laser-stem blue"></div>
+          <div class="arrow-pointer blue"></div>
+        </div>
+
+        <!-- U5 -->
+        <div class="timeline-node user">
+          <div class="node-header">
+            <span class="node-title">7A. Agent Created ➔ My Agents Dashboard</span>
+            <span class="node-pill pill-blue">MyAgents.tsx</span>
+          </div>
+          <div class="node-code">GET /agents (owner_id = user.id)</div>
+          <div class="node-text">
+            Agent is saved in PostgreSQL and appears in user's "My Agents" dashboard.
+          </div>
+        </div>
+
+        <div class="arrow-unit">
+          <span class="arrow-tag">Click Agent Card</span>
+          <div class="laser-stem blue"></div>
+          <div class="arrow-pointer blue"></div>
+        </div>
+
+        <!-- U6 -->
+        <div class="timeline-node user">
+          <div class="node-header">
+            <span class="node-title">8A. Agent Overview Tab (Backend Flowchart)</span>
+            <span class="node-pill pill-blue">AgentDetail.tsx</span>
+          </div>
+          <div class="node-code">GET /agents/:id/overview</div>
+          <div class="node-text">
+            Displays visual flowchart showing <strong>how the agent is actually working in the backend</strong> (ReAct orchestration loop, active MCP tool bridges).
+          </div>
+        </div>
+
+        <div class="arrow-unit">
+          <span class="arrow-tag">Open Testing Tab</span>
+          <div class="laser-stem blue"></div>
+          <div class="arrow-pointer blue"></div>
+        </div>
+
+        <!-- U7 -->
+        <div class="timeline-node user">
+          <div class="node-header">
+            <span class="node-title">9A. Playground Testing Tab</span>
+            <span class="node-pill pill-blue">Playground.tsx</span>
+          </div>
+          <div class="node-code">POST /chat/stream (SSE Multi-Turn)</div>
+          <div class="node-text">
+            User tests whether the agent is working correctly or not:
+            <ul>
+              <li>Enters custom prompts and verifies real use cases.</li>
+              <li>Backend injects user's PAT JIT (zero secrets passed to the LLM).</li>
+              <li><strong>Human-in-the-Loop:</strong> Destructive/write actions pause and prompt user for approval.</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="arrow-unit">
+          <span class="arrow-tag">Evaluate Execution Metrics</span>
+          <div class="laser-stem blue"></div>
+          <div class="arrow-pointer blue"></div>
+        </div>
+
+        <!-- U8 -->
+        <div class="timeline-node user">
+          <div class="node-header">
+            <span class="node-title">10A. Automated Scoring Engine</span>
+            <span class="node-pill pill-blue">scoring.py</span>
+          </div>
+          <div class="node-code">calculate_agent_score(agent_id)</div>
+          <div class="node-text">
+            Evaluates agent based on parameters:
+            <ul>
+              <li><strong>Tool Scope:</strong> Penalizes tool sprawl / unused tools.</li>
+              <li><strong>Prompt Completeness:</strong> Evaluates prompt length and structure.</li>
+              <li><strong>Playground Reliability:</strong> Checks run success rate.</li>
+              <li><strong>Computes Score (0–100) and Letter Grade (A–F).</strong></li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="arrow-unit">
+          <span class="arrow-tag">Submit for Publishing</span>
+          <div class="laser-stem blue"></div>
+          <div class="arrow-pointer blue"></div>
+        </div>
+
+        <!-- U9 -->
+        <div class="timeline-node user">
+          <div class="node-header">
+            <span class="node-title">11A. User Submits Agent for Publishing</span>
+            <span class="node-pill pill-blue">publish_graph.py</span>
+          </div>
+          <div class="node-code">POST /marketplace/publish</div>
+          <div class="node-text">
+            LangGraph checkpointer invokes <code>interrupt()</code>; review state is durably saved in PostgreSQL.
+          </div>
+        </div>
+
+        <div class="track-separator">
+          <span style="color: var(--purple);">Track 2: Platform Administrator Governance Path</span>
+        </div>
+
+        <!-- A1 -->
+        <div class="timeline-node admin">
+          <div class="node-header">
+            <span class="node-title">3B. Admin Identified &amp; Registers MCP Server</span>
+            <span class="node-pill pill-purple">Admin Authority</span>
+          </div>
+          <div class="node-code">POST /mcp/register { name, url, provider }</div>
+          <div class="node-text">
+            Admin has exclusive authority to add servers. Selects/inputs server details, SSE/stdio endpoint URL, and provider.
+          </div>
+        </div>
+
+        <div class="arrow-unit">
+          <span class="arrow-tag">Live Handshake Test</span>
+          <div class="laser-stem purple"></div>
+          <div class="arrow-pointer purple"></div>
+        </div>
+
+        <!-- A2 -->
+        <div class="timeline-node admin">
+          <div class="node-header">
+            <span class="node-title">4B. Test Server with Admin's PAT</span>
+            <span class="node-pill pill-purple">POST /mcp/test-probe</span>
+          </div>
+          <div class="node-code">Live probe using Admin's own PAT credentials</div>
+          <div class="node-text">
+            Admin tests whether the server is working properly or not by supplying their own PAT token. Validates connectivity and tool introspection.
+          </div>
+        </div>
+
+        <div class="arrow-unit">
+          <span class="arrow-tag">Approve Globally</span>
+          <div class="laser-stem purple"></div>
+          <div class="arrow-pointer purple"></div>
+        </div>
+
+        <!-- A3 -->
+        <div class="timeline-node admin">
+          <div class="node-header">
+            <span class="node-title">5B. Approve &amp; Publish Server to Entire Website</span>
+            <span class="node-pill pill-green">Global Availability</span>
+          </div>
+          <div class="node-code">UPDATE mcp_servers SET is_approved = true</div>
+          <div class="node-text">
+            Server is approved and published. <strong>Instantly visible to all users on the MCP Registry page!</strong>
+          </div>
+        </div>
+
+        <div class="track-separator">
+          <span style="color: var(--amber);">Convergence: Admin Review &amp; Score 70 Threshold</span>
+        </div>
+
+        <!-- R1 -->
+        <div class="timeline-node admin">
+          <div class="node-header">
+            <span class="node-title">12. Admin Review Portal</span>
+            <span class="node-pill pill-purple">AdminReview.tsx</span>
+          </div>
+          <div class="node-code">GET /marketplace/submissions/pending</div>
+          <div class="node-text">
+            Admin inspects pending agent submissions, prompt safety checklist, tool bindings, and the automated score (0–100).
+          </div>
+        </div>
+
+        <div class="arrow-unit">
+          <span class="arrow-tag">Score 70 Decision Gate</span>
+          <div class="laser-stem amber"></div>
+          <div class="arrow-pointer amber"></div>
+        </div>
+
+        <!-- R2: REJECT -->
+        <div class="timeline-node gate">
+          <div class="node-header">
+            <span class="node-title">13A. REJECT (Score &lt; 70)</span>
+            <span class="node-pill pill-red">Command(resume="rejected")</span>
+          </div>
+          <div class="node-code">STATUS = 'rejected'</div>
+          <div class="node-text">
+            If score is below 70, Admin rejects. Sent back to user with feedback to improve prompts or reduce tool sprawl.
+          </div>
+        </div>
+
+        <div class="arrow-unit">
+          <span class="arrow-tag">Score &gt;= 70 (Passing Threshold)</span>
+          <div class="laser-stem green"></div>
+          <div class="arrow-pointer green"></div>
+        </div>
+
+        <!-- R3: APPROVE -->
+        <div class="timeline-node market">
+          <div class="node-header">
+            <span class="node-title">13B. APPROVE (Score &gt;= 70) ➔ Published to Marketplace!</span>
+            <span class="node-pill pill-green">Marketplace.tsx</span>
+          </div>
+          <div class="node-code">STATUS = 'published' | is_public = true | Command(resume="approved")</div>
+          <div class="node-text">
+            Agent is officially published with Trust Badge, Score, Grade, and Tool Manifest.
+          </div>
+        </div>
+
+        <div class="arrow-unit">
+          <span class="arrow-tag">Direct Ecosystem Reuse</span>
+          <div class="laser-stem green"></div>
+          <div class="arrow-pointer green"></div>
+        </div>
+
+        <!-- REUSE -->
+        <div class="timeline-node market" style="border-left-width: 10px;">
+          <div class="node-header">
+            <span class="node-title">⚡ 14. DIRECT AGENT REUSE (Zero Rebuilding Required!)</span>
+            <span class="node-pill pill-green">Community Value</span>
+          </div>
+          <div class="node-code">POST /marketplace/install/:id</div>
+          <div class="node-text" style="font-size: 13.5px; font-weight: 600;">
+            Any user on the platform can now discover and use this agent directly without building it again! Clicks "Install Agent" and executes immediately with their own personal connected PAT tokens.
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ========================================================================= -->
+    <!-- SECTION 3: RAW MERMAID CODE (FOR COPYING) -->
+    <!-- ========================================================================= -->
+    <div class="card" id="raw-code-card">
+      <div class="card-title">
+        <span>📋 Raw Mermaid Source Code</span>
+        <button class="btn-action" onclick="copyMermaid()">📋 Copy Code</button>
+      </div>
+      <p style="font-size: 13px; color: var(--text-muted);">
+        Can be copied directly into Markdown files, GitHub issues, or documentation generators:
+      </p>
+      <pre class="code-block" id="raw-mermaid-text">flowchart TD
+    %% Global Styles
+    classDef startStyle fill:#0f172a,stroke:#334155,stroke-width:2px,color:#ffffff,font-weight:bold
+    classDef authStyle fill:#fef3c7,stroke:#d97706,stroke-width:2px,color:#78350f,font-weight:bold
+    classDef userStyle fill:#eff6ff,stroke:#2563eb,stroke-width:2px,color:#1e3a8a
+    classDef adminStyle fill:#faf5ff,stroke:#7c3aed,stroke-width:2px,color:#4c1d95
+    classDef pauseStyle fill:#fffbeb,stroke:#d97706,stroke-width:2px,stroke-dasharray: 4 4,color:#92400e
+    classDef gateStyle fill:#fef2f2,stroke:#dc2626,stroke-width:2px,color:#7f1d1d,font-weight:bold
+    classDef successStyle fill:#ecfdf5,stroke:#059669,stroke-width:2px,color:#064e3b,font-weight:bold
+    classDef marketStyle fill:#f0fdf4,stroke:#059669,stroke-width:3px,color:#064e3b,font-weight:bold
+
+    %% 1. ENTRY & AUTH
+    S1(["👤 1. User or Admin visits Platform"]):::startStyle
+    S2["🔐 2. Enter Email & Password (LoginPage.tsx)<br/>• Submits to FastAPI /auth/login"]:::authStyle
+    S3{"🔍 3. Database Check (bcrypt & is_admin)<br/>Role Identification"}:::authStyle
+
+    S1 --> S2
+    S2 --> S3
+
+    %% 2. ROLE BRANCHING
+    S3 -->|is_admin == false| U1["📋 4A. Lands on MCP Registry (MCPRegistry.tsx)<br/>• Views ONLY Admin-approved & published servers"]:::userStyle
+    S3 -->|is_admin == true| A1["👑 4B. Admin Identified (AdminReview.tsx)<br/>• Unlocks '+ Register MCP Server' & Portal"]:::adminStyle
+
+    %% 3. USER WORKFLOW
+    U1 --> U2{"❓ Tokens connected?"}:::userStyle
+    U2 -->|No / First time| U3["🔑 5A. Connections Page (Connections.tsx)<br/>• Connects PATs (GitHub, Slack, GitLab)<br/>• Live API test probe validates keys<br/>• Tokens ENCRYPTED & HIDDEN in UI"]:::userStyle
+    U2 -->|Yes| U4["🛠️ 6A. Agent Builder Page (AgentBuilder.tsx)<br/>• Inputs Agent Name & System Prompt<br/>• Selects required MCP servers/tools<br/>• DESELECTS unneeded tools"]:::userStyle
+    U3 --> U4
+
+    U4 --> U5{"🔍 All tokens active<br/>for selected tools?"}:::userStyle
+    U5 -->|Missing Tokens| U6["⏸️ 7A. INTERRUPT GATE<br/>• Workflow paused: prompts for token<br/>• User inputs PAT & validated live<br/>▶️ RESUMES automatically!"]:::pauseStyle
+    U6 --> U7["💾 8A. Agent Created (POST /agents)<br/>• Saved to DB under owner_id<br/>• Appears in My Agents Page"]:::userStyle
+    U5 -->|All Active| U7
+
+    U7 --> U8["📊 9A. My Agents Overview Tab (AgentDetail.tsx)<br/>• Renders visual backend flowchart<br/>• Shows ReAct loop & MCP tool bindings"]:::userStyle
+    U8 --> U9["🧪 10A. Playground Testing (Playground.tsx)<br/>• Tests prompts & use cases with chat<br/>• Backend injects PAT JIT (zero LLM leaks)<br/>• Human-in-the-Loop for write actions"]:::userStyle
+    U9 --> U10["📈 11A. Automated Scoring Engine (scoring.py)<br/>• Evaluates: Tool count, Prompt length,<br/>Reliability & Test execution history<br/>• Computes Score (0-100) & Grade (A-F)"]:::userStyle
+    U10 --> U11["🚀 12A. User Submits for Publishing<br/>• POST /marketplace/publish<br/>• LangGraph calls interrupt()<br/>• State paused durably in PostgreSQL"]:::userStyle
+
+    %% 4. ADMIN WORKFLOW
+    A1 --> A2["➕ 5B. Admin Registers New MCP Server<br/>• Inputs Name, SSE/stdio URL, provider"]:::adminStyle
+    A2 --> A3["🔬 6B. Test Probe with Admin's Own PAT<br/>• Admin provides personal PAT token<br/>• Live handshake tests tool introspection"]:::adminStyle
+    A3 --> A4["✅ 7B. Server Approved & Published<br/>• Commits to mcp_servers & mcp_tools<br/>• Instantly visible on MCP Registry!"]:::successStyle
+    A4 -.->|Now available in catalog| U1
+
+    %% 5. ADMIN REVIEW & GOVERNANCE GATE
+    U11 --> R1["📑 13. Admin Review Portal (AdminReview.tsx)<br/>• Inspects pending agent submission<br/>• Reviews prompt, tool bindings & score"]:::adminStyle
+    A1 --> R1
+    
+    R1 --> R2{"⚖️ 14. Score Evaluation Gate<br/>Does Score >= 70?"}:::gateStyle
+    
+    R2 -->|< 70: Fails Gate| R3["❌ 15A. REJECT AGENT<br/>• Resume LangGraph: Command(resume='rejected')<br/>• Sent back to user with feedback!"]:::gateStyle
+    R3 -.->|User refines prompt & tools| U4
+
+    R2 -->|>= 70: Passes Gate| R4["✅ 15B. APPROVE AGENT<br/>• Resume LangGraph: Command(resume='approved')<br/>• Status set to Published"]:::successStyle
+
+    %% 6. COMMUNITY MARKETPLACE REUSE
+    R4 --> M1["🏪 16. Community Marketplace (/marketplace)<br/>• Visible to all workspace members<br/>• Trust Badge, Score, Grade & Tools"]:::marketStyle
+    
+    M1 --> M2["⚡ 17. DIRECT AGENT REUSE (Zero Rebuilding!)<br/>• ANY USER can discover and use this agent directly<br/>• No need to build or configure again!<br/>• Runs with user's own connected PAT tokens"]:::marketStyle</pre>
+    </div>
+
+  </div>
+
+  <script>
+    function copyMermaid() {
+      const code = document.getElementById('raw-mermaid-text').innerText;
+      navigator.clipboard.writeText(code).then(() => {
+        const btns = document.querySelectorAll('.btn-action');
+        btns.forEach(b => {
+          b.innerText = 'Copied!';
+          setTimeout(() => { b.innerText = '📋 Copy Mermaid Code'; }, 2000);
+        });
+      });
+    }
+  </script>
+
+</body>
+</html>
