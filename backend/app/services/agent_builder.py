@@ -368,12 +368,10 @@ async def _run_with_approval_check(
         await graph.ainvoke({"messages": [("human", message)]}, config=thread_config)
     except Exception as exc:
         logger.warning("Approval-aware agent run error: %s", exc)
-        # If LLM invocation fails (e.g. rate limit), run agent's primary tool directly
-        if config.tools:
-            primary_tool = config.tools[0]
-            fallback_args = {"query": message, "text": message, "message": message, "channel": "general"}
-            return RunResult(output=await _execute_real_tool(config, credentials, primary_tool.tool_name, fallback_args))
-        return RunResult(output=f"✓ Completed request: {message}")
+        return RunResult(
+            output=f"The agent encountered an error while processing your request: {exc}",
+            status="error",
+        )
 
     return await _handle_graph_state(graph, thread_config, config, credentials)
 
@@ -445,7 +443,8 @@ async def _handle_graph_state(
         except Exception as exc:
             logger.warning("Auto-continue failed: %s", exc)
             if tool_messages:
-                return RunResult(output="\n\n".join(tm.content for tm in tool_messages))
+                tool_output = "\n\n".join(tm.content for tm in tool_messages)
+                return RunResult(output=f"Tool results:\n\n{tool_output}")
             break
 
     state = graph.get_state(thread_config)
@@ -975,16 +974,18 @@ async def _execute_tavily_tool(token: str, tool_name: str, args: dict[str, Any])
 
         elif clean_name == "extract":
             urls = args.get("urls") or ([args.get("url")] if args.get("url") else [])
+            if not urls:
+                return "Tavily extract: No URLs provided. Please supply one or more URLs to extract content from."
             payload = {"api_key": token, "urls": urls}
             try:
                 res = await client.post("https://api.tavily.com/extract", headers=headers, json=payload)
                 if res.status_code == 200:
                     data = res.json()
                     results = [f"URL: {r.get('url')}\nContent: {r.get('raw_content', '')[:300]}..." for r in data.get("results", [])]
-                    return "\n\n".join(results)
-            except Exception:
-                pass
-            return "✓ Tavily content extraction completed."
+                    return "\n\n".join(results) if results else "Tavily extract returned no content for the provided URLs."
+                return f"Tavily extract error: HTTP {res.status_code} - {res.text[:200]}"
+            except Exception as e:
+                return f"Tavily extract failed: {e}"
 
         return f"✓ Tavily action {tool_name} completed."
 
