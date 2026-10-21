@@ -51,10 +51,13 @@ export default function AgentBuilder() {
   const [verifyStatus, setVerifyStatus] = useState<Record<string, 'idle' | 'checking' | 'ok' | 'error'>>({})
   const [verifyMsg, setVerifyMsg] = useState<Record<string, string>>({})
   const [agentName, setAgentName] = useState('')
+  const [purpose, setPurpose] = useState('')
+  const [aiMessage, setAiMessage] = useState('')
+  const [suggesting, setSuggesting] = useState(false)
   const [builtAgent, setBuiltAgent] = useState<Agent | null>(null)
   const [error, setError] = useState('')
   const [showToolsDropdown, setShowToolsDropdown] = useState(false)
-  const [modelId, setModelId] = useState('gemini-2.0-flash')
+  const [modelId, setModelId] = useState('gemini-3.5-flash-lite')
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -65,14 +68,21 @@ export default function AgentBuilder() {
     if (!prompt.trim()) return
     setStage(1)
     setError('')
+    setSuggesting(true)
     try {
-      const servers = await api.suggestTools(prompt)
+      const result = await api.suggestTools(prompt)
+      const servers = result.servers
       setSuggestedServers(servers)
-      // Pre-check only servers the backend matched to the prompt; rest stay unchecked.
-      setCheckedServers(new Set(servers.filter((s) => s.is_suggested).map((s) => s.id)))
-      setAgentName(deriveAgentName(servers.filter((s) => s.is_suggested), prompt))
+      // Pre-check only servers the LLM picked for the prompt; rest stay unchecked.
+      const picked = servers.filter((s) => s.is_suggested)
+      setCheckedServers(new Set(picked.map((s) => s.id)))
+      setAiMessage(result.message)
+      setPurpose(result.purpose || prompt)
+      setAgentName(result.agent_name || deriveAgentName(picked, prompt))
     } catch {
       setError('Failed to load suggested tools.')
+    } finally {
+      setSuggesting(false)
     }
   }
 
@@ -179,6 +189,8 @@ export default function AgentBuilder() {
       .then((agent) => {
         setBuiltAgent(agent)
         setStage(4)
+        // Hand the original prompt to the playground, which runs it right away.
+        navigate(`/agents/${agent.id}?tab=playground`, { state: { autoPrompt: prompt } })
       })
       .catch((err: unknown) => {
         const msg = err instanceof Error ? err.message : 'Failed to build agent.'
@@ -230,7 +242,7 @@ export default function AgentBuilder() {
                     className="text-xs border border-gray-300 rounded-md px-2 py-1.5 text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2e9e7a]"
                   >
                     <optgroup label="Gemini">
-                      <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                      <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite</option>
                       <option value="gemini-1.5-flash">gemini-1.5-flash</option>
                       <option value="gemini-1.5-pro">gemini-1.5-pro</option>
                     </optgroup>
@@ -267,7 +279,8 @@ export default function AgentBuilder() {
             <div className="flex gap-3 items-start">
               <ForgeAvatar />
               <div className="text-sm text-gray-700 space-y-3 w-full">
-                <p>Got it. I searched your registry — here are the MCP servers that match your prompt:</p>
+                {suggesting && <p className="text-gray-400 animate-pulse">Thinking…</p>}
+                {aiMessage && <p>{aiMessage}</p>}
                 <div className="p-3 border border-gray-200 rounded-lg bg-gray-50 space-y-2">
                   <div>
                     <span className="text-xs text-gray-400 uppercase tracking-wide">Agent name</span>
@@ -281,10 +294,10 @@ export default function AgentBuilder() {
                   </div>
                   <div>
                     <span className="text-xs text-gray-400 uppercase tracking-wide">Purpose</span>
-                    <p className="text-gray-600 text-xs mt-0.5">{prompt}</p>
+                    <p className="text-gray-600 text-xs mt-0.5">{purpose || prompt}</p>
                   </div>
                 </div>
-                <p>Select the servers you want this agent to use:</p>
+                {!suggesting && <p>Select the servers you want this agent to use:</p>}
               </div>
             </div>
 

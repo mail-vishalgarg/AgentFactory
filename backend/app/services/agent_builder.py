@@ -285,8 +285,10 @@ async def build_agent_config(db: AsyncSession, request: AgentCreate) -> AgentCon
 
 
 def _build_llm(config: AgentConfigSchema) -> BaseChatModel:
-    model_id = config.model.model_id
+    return build_chat_model(config.model.model_id, config.model.temperature, config.model.max_tokens)
 
+
+def build_chat_model(model_id: str, temperature: float, max_tokens: int) -> BaseChatModel:
     # model_id takes priority — "gpt" in the name always means OpenAI
     use_openai = "gpt" in model_id.lower()
 
@@ -298,8 +300,8 @@ def _build_llm(config: AgentConfigSchema) -> BaseChatModel:
             )
         return ChatOpenAI(
             model=model_id,
-            temperature=config.model.temperature,
-            max_tokens=config.model.max_tokens,
+            temperature=temperature,
+            max_tokens=max_tokens,
             api_key=settings.openai_api_key,
         )
 
@@ -310,8 +312,8 @@ def _build_llm(config: AgentConfigSchema) -> BaseChatModel:
         if settings.openai_api_key:
             return ChatOpenAI(
                 model=settings.openai_model or "gpt-4o-mini",
-                temperature=config.model.temperature,
-                max_tokens=config.model.max_tokens,
+                temperature=temperature,
+                max_tokens=max_tokens,
                 api_key=settings.openai_api_key,
             )
         raise HTTPException(
@@ -327,8 +329,8 @@ def _build_llm(config: AgentConfigSchema) -> BaseChatModel:
 
     return ChatGoogleGenerativeAI(
         model=target_model,
-        temperature=config.model.temperature,
-        max_output_tokens=config.model.max_tokens,
+        temperature=temperature,
+        max_output_tokens=max_tokens,
         api_key=api_key,
         max_retries=1,
     )

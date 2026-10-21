@@ -43,3 +43,12 @@ class MCPServerCreate(BaseModel):
     auth_type: str
     is_shared: bool = True
     token: str | None = None
+
+
+class ToolSuggestionResponse(BaseModel):
+    """LLM-authored reply for the builder's "pick tools" step."""
+
+    message: str = ""
+    agent_name: str = ""
+    purpose: str = ""
+    servers: list[MCPServerResponse]

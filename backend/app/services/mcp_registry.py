@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models.mcp import MCPServer, MCPTool
 from app.repositories import mcp as mcp_repo
+from app.services import tool_suggester
+from langchain_google_genai import ChatGoogleGenerativeAI
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +92,31 @@ async def find_tools_for_prompt(db: AsyncSession, owner_id: uuid.UUID, prompt: s
             matched.append(server)
 
     return matched if matched else servers
+
+
+async def suggest_for_prompt(
+    db: AsyncSession, owner_id: uuid.UUID, prompt: str
+) -> tuple[tool_suggester.Suggestion, list[MCPServer], list[MCPServer]]:
+    """LLM picks the servers; falls back to keyword matching if the LLM is unavailable.
+    Returns (suggestion, matched servers, all visible servers)."""
+    all_servers = await mcp_repo.list_visible_servers(db, owner_id)
+    suggestion: tool_suggester.Suggestion | None = None
+    if settings.active_gemini_api_key:
+        llm = ChatGoogleGenerativeAI(
+            model=tool_suggester.SUGGEST_MODEL,
+            temperature=0.0,
+            max_output_tokens=1024,
+            api_key=settings.active_gemini_api_key,
+            max_retries=1,
+        )
+        suggestion = await tool_suggester.suggest_with_llm(llm, prompt, all_servers)
+    else:
+        logger.warning("GEMINI_API_KEY not set; using keyword fallback for tool suggestion")
+    if suggestion is None:
+        matched = await find_tools_for_prompt(db, owner_id, prompt)
+        return tool_suggester.Suggestion(), matched, all_servers
+    matched = [s for s in all_servers if s.name in suggestion.matched_names]
+    return suggestion, matched, all_servers
 
 
 def get_external_catalog(registered_names: set[str]) -> list[dict]:

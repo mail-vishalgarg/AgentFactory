@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Link, useLocation, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, type Agent, type AgentConfig, type AgentEvaluation, type AgentRun, type AgentScore } from '../api/client'
 
 type Tab = 'overview' | 'playground' | 'connections' | 'runs' | 'api' | 'settings'
@@ -716,6 +716,7 @@ function ScoreBreakdownPanel({ scoreData }: { scoreData: AgentScore }) {
 export default function AgentDetail() {
   const { id } = useParams<{ id: string }>()
   const location = useLocation()
+  const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const [agent, setAgent] = useState<Agent | null>(null)
   const isPlaygroundPath = location.pathname.endsWith('/playground')
@@ -747,6 +748,10 @@ export default function AgentDetail() {
   const [evalError, setEvalError] = useState('')
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
+  // Prompt handed over by the Build screen; consumed once, then cleared.
+  const autoPromptRef = useRef<string | null>(
+    (location.state as { autoPrompt?: string } | null)?.autoPrompt ?? null,
+  )
 
   // Score + governance: the single source of truth shared by Overview,
   // Playground, and Settings, so all three tabs always agree.
@@ -806,6 +811,16 @@ export default function AgentDetail() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, sending, pendingApproval])
+
+  // Run the prompt the user typed on the Build screen as soon as the agent loads.
+  useEffect(() => {
+    const prompt = autoPromptRef.current
+    if (!agent || !prompt) return
+    autoPromptRef.current = null
+    navigate(location.pathname + location.search, { replace: true, state: null })
+    setTab('playground')
+    void send(prompt)
+  }, [agent])
 
   async function send(customPrompt?: string) {
     const textToSend = (customPrompt || input).trim()

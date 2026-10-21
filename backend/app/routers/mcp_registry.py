@@ -11,7 +11,7 @@ from app.models.mcp import MCPServer
 from app.models.user import User
 from app.repositories import connection as conn_repo
 from app.repositories import mcp as mcp_repo
-from app.schemas.mcp import MCPServerCreate, MCPServerResponse
+from app.schemas.mcp import MCPServerCreate, MCPServerResponse, ToolSuggestionResponse
 from app.services import mcp_registry as svc
 
 router = APIRouter()
@@ -268,18 +268,20 @@ async def import_discovery(
     return (await _to_responses(db, user, [refreshed]))[0]
 
 
-@router.get("/tools/suggest", response_model=list[MCPServerResponse])
+@router.get("/tools/suggest", response_model=ToolSuggestionResponse)
 async def suggest_tools(
     prompt: str,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
-) -> list[MCPServerResponse]:
-    """Return ALL visible servers with is_suggested=True for prompt-matched ones.
-    Matched servers appear first; unmatched are unchecked by default."""
-    matched = await svc.find_tools_for_prompt(db, user.id, prompt)
-    all_servers = await svc.list_servers(db, user.id)
-
+) -> ToolSuggestionResponse:
+    """LLM-selected servers for the prompt, plus its reply text and agent name.
+    Matched servers come first (is_suggested=True); the rest stay unchecked."""
+    suggestion, matched, all_servers = await svc.suggest_for_prompt(db, user.id, prompt)
     matched_ids = {s.id for s in matched}
     ordered = list(matched) + [s for s in all_servers if s.id not in matched_ids]
-
-    return await _to_responses(db, user, ordered, suggested_ids=matched_ids)
+    return ToolSuggestionResponse(
+        message=suggestion.message,
+        agent_name=suggestion.agent_name,
+        purpose=suggestion.purpose,
+        servers=await _to_responses(db, user, ordered, suggested_ids=matched_ids),
+    )

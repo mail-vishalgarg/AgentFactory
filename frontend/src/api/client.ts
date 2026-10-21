@@ -68,6 +68,13 @@ export interface MCPServer {
   is_suggested: boolean
 }
 
+export interface ToolSuggestion {
+  message: string
+  agent_name: string
+  purpose: string
+  servers: MCPServer[]
+}
+
 export interface EvaluationDimension {
   name: string
   score: number
@@ -334,7 +341,7 @@ export const api = {
   deleteServer: (id: string) =>
     req<void>(`/mcp/servers/${id}`, { method: 'DELETE' }),
   suggestTools: (prompt: string) =>
-    req<MCPServer[]>(`/mcp/tools/suggest?prompt=${encodeURIComponent(prompt)}`),
+    req<ToolSuggestion>(`/mcp/tools/suggest?prompt=${encodeURIComponent(prompt)}`),
   createAgent: (body: CreateAgentRequest) =>
     req<Agent>('/agents', { method: 'POST', body: JSON.stringify(body) }),
   listAgents: () => req<Agent[]>('/agents'),
